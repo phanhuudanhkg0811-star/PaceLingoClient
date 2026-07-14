@@ -1870,7 +1870,7 @@ function CandidatePreview({
                 className="flex items-center gap-2 justify-self-start py-3 text-xs font-medium text-slate-700"
               >
                 <span
-                  className={`grid size-5 place-items-center rounded border ${activeQuestion && flaggedQuestionIds.includes(activeQuestion.id) ? "border-amber-500 bg-amber-500 text-white" : "border-slate-400 bg-white"}`}
+                  className={`grid size-5 place-items-center rounded border ${activeQuestion && flaggedQuestionIds.includes(activeQuestion.id) ? "border-[#1677c8] bg-[#1677c8] text-white" : "border-slate-400 bg-white"}`}
                 >
                   {activeQuestion && flaggedQuestionIds.includes(activeQuestion.id) ? "✓" : ""}
                 </span>
@@ -1889,7 +1889,7 @@ function CandidatePreview({
                   type="button"
                   disabled={pageIndex === 0}
                   onClick={() => goToPage(pageIndex - 1)}
-                  className="grid h-12 w-12 place-items-center bg-[#55a43b] text-lg font-bold text-white transition disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-100"
+                  className="grid h-12 w-12 place-items-center bg-[#1677c8] text-lg font-bold text-white transition hover:bg-[#0b5fa5] disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-100"
                   aria-label="Trang trước"
                 >
                   ←
@@ -1898,7 +1898,7 @@ function CandidatePreview({
                   type="button"
                   disabled={pageIndex >= pages.length - 1}
                   onClick={() => goToPage(pageIndex + 1)}
-                  className="grid h-12 min-w-12 place-items-center bg-[#55a43b] px-3 text-lg font-bold text-white transition disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-100"
+                  className="grid h-12 min-w-12 place-items-center bg-[#1677c8] px-3 text-lg font-bold text-white transition hover:bg-[#0b5fa5] disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-100"
                 >
                   →
                 </button>
@@ -1929,7 +1929,7 @@ function CandidatePreview({
                   <div className="mb-5 flex flex-wrap gap-4 text-xs text-slate-600">
                     <span><i className="mr-1 inline-block size-3 rounded bg-[#295ca8]" />Đã làm</span>
                     <span><i className="mr-1 inline-block size-3 rounded border border-slate-300 bg-white" />Chưa làm</span>
-                    <span><i className="mr-1 inline-block size-3 rounded border-2 border-amber-500 bg-amber-50" />Đã flag</span>
+                    <span><i className="mr-1 inline-block size-3 rounded border-2 border-[#1677c8] bg-blue-50" />Đã flag</span>
                   </div>
                   <div className="space-y-5">
                     {test.sections
@@ -1960,11 +1960,11 @@ function CandidatePreview({
                                     onClick={() =>
                                       goToPage(targetPageIndex, question.id)
                                     }
-                                    className={`relative aspect-square rounded-lg border text-xs font-bold ${answered ? "border-[#295ca8] bg-[#295ca8] text-white" : "border-slate-300 bg-white text-slate-700"} ${activeQuestion?.id === question.id ? "ring-2 ring-slate-900 ring-offset-1" : ""} ${flagged ? "ring-2 ring-amber-500 ring-offset-1" : ""}`}
+                                    className={`relative aspect-square rounded-lg border text-xs font-bold ${answered ? "border-[#295ca8] bg-[#295ca8] text-white" : "border-slate-300 bg-white text-slate-700"} ${activeQuestion?.id === question.id ? "ring-2 ring-slate-900 ring-offset-1" : ""} ${flagged ? "ring-2 ring-[#1677c8] ring-offset-1" : ""}`}
                                   >
                                     {question.number}
                                     {flagged && (
-                                      <span className="absolute -right-1 -top-1 text-[10px] text-amber-600">⚑</span>
+                                      <span className="absolute -right-1 -top-1 text-[10px] text-[#1677c8]">⚑</span>
                                     )}
                                   </button>
                                 );

@@ -4,15 +4,15 @@
 
 :root {
   color-scheme: light;
-  --background: #f4f7fb;
-  --foreground: #162033;
+  --background: #f3f7fc;
+  --foreground: #10233f;
   --surface: #ffffff;
-  --surface-raised: #f9fbff;
-  --muted: #667085;
-  --border: #dfe5ef;
-  --accent: #0d9488;
-  --accent-strong: #0f766e;
-  --accent-soft: #ccfbf1;
+  --surface-raised: #f7faff;
+  --muted: #60708a;
+  --border: #d8e2f0;
+  --accent: #1677c8;
+  --accent-strong: #0b4f8a;
+  --accent-soft: #dbeafe;
   --danger: #dc2626;
   --danger-soft: #fee2e2;
   --shadow: 15, 23, 42;
@@ -20,15 +20,15 @@
 
 .dark {
   color-scheme: dark;
-  --background: #09111f;
+  --background: #061326;
   --foreground: #edf4ff;
-  --surface: #111c2e;
-  --surface-raised: #17243a;
-  --muted: #9aa9bf;
-  --border: #263650;
-  --accent: #2dd4bf;
-  --accent-strong: #5eead4;
-  --accent-soft: #123c3a;
+  --surface: #0b1f38;
+  --surface-raised: #112b49;
+  --muted: #9aadc7;
+  --border: #274463;
+  --accent: #38a3ff;
+  --accent-strong: #72bdff;
+  --accent-soft: #123b61;
   --danger: #fb7185;
   --danger-soft: #4c1d2a;
   --shadow: 0, 0, 0;
@@ -72,26 +72,29 @@ select {
 
 .exam-scrollbar {
   scrollbar-width: thin;
-  scrollbar-color: rgb(100 116 139 / 35%) transparent;
+  scrollbar-color: rgb(100 116 139 / 42%) transparent;
+  scrollbar-gutter: stable;
+  overscroll-behavior: contain;
 }
 
 .exam-scrollbar::-webkit-scrollbar {
-  width: 9px;
-  height: 9px;
+  width: 10px;
+  height: 10px;
 }
 
 .exam-scrollbar::-webkit-scrollbar-track {
   background: transparent;
+  margin-block: 8px;
 }
 
 .exam-scrollbar::-webkit-scrollbar-thumb {
-  background: rgb(100 116 139 / 32%);
+  background: rgb(100 116 139 / 42%);
   background-clip: padding-box;
-  border: 2px solid transparent;
+  border: 3px solid transparent;
   border-radius: 999px;
 }
 
 .exam-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: rgb(71 85 105 / 52%);
+  background: rgb(71 85 105 / 58%);
   background-clip: padding-box;
 }

@@ -126,6 +126,52 @@ export interface CandidateRuntime extends CandidateManifest {
   expectedAudioPositionMs: number;
 }
 
+export type AttemptStatus =
+  | "IN_PROGRESS"
+  | "SUBMITTED"
+  | "AUTO_SUBMITTED"
+  | "EXPIRED"
+  | "ABANDONED";
+
+export interface AttemptAnswer {
+  questionId: string;
+  selectedOptionId: string | null;
+  isFlagged: boolean;
+  answeredAt: string | null;
+  clientSequence: number;
+}
+
+export interface AttemptTiming {
+  questionId: string;
+  activeTimeMs: number;
+  visitCount: number;
+  firstViewedAt: string | null;
+  lastViewedAt: string | null;
+  clientSequence: number;
+}
+
+export interface CandidateAttempt {
+  id: string;
+  testId: string;
+  testVersionId: string;
+  status: AttemptStatus;
+  startedAt: string;
+  listeningEndsAt: string | null;
+  readingEndsAt: string | null;
+  expiresAt: string;
+  submittedAt: string | null;
+  currentSection: "LISTENING" | "READING" | null;
+  currentQuestionId: string | null;
+  listeningCorrect: number | null;
+  readingCorrect: number | null;
+  listeningScore: number | null;
+  readingScore: number | null;
+  totalScore: number | null;
+  answers: AttemptAnswer[];
+  timings: AttemptTiming[];
+  serverNow: string;
+}
+
 export function parseCandidatePayload(value: unknown): CandidatePayload {
   const root = record(value, "$ candidate payload");
   if (root.schemaVersion !== 1) {
