@@ -14,12 +14,12 @@ export default function ErrorPage({
   }, [error]);
 
   return (
-    <main className="grid min-h-screen place-items-center bg-slate-950 px-6 text-center text-slate-100">
+    <main className="grid min-h-screen place-items-center bg-background px-6 text-center text-foreground">
       <div>
         <h1 className="text-2xl font-semibold">Đã có lỗi xảy ra</h1>
-        <p className="mt-2 text-slate-400">PaceLingo chưa thể tải nội dung này.</p>
+        <p className="mt-2 text-muted">PaceLingo chưa thể tải nội dung này.</p>
         <button
-          className="mt-6 rounded-full bg-emerald-500 px-5 py-2.5 font-medium text-slate-950"
+          className="mt-6 rounded-full bg-accent px-5 py-2.5 font-bold text-white dark:text-slate-950"
           onClick={() => unstable_retry()}
         >
           Thử lại

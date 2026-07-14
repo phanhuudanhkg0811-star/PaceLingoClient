@@ -38,6 +38,10 @@ export async function refreshSession(): Promise<SessionPayload | null> {
       accessToken = session.accessToken;
       return session;
     })
+    .catch(() => {
+      accessToken = null;
+      return null;
+    })
     .finally(() => {
       refreshPromise = null;
     });

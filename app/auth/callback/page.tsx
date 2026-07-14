@@ -27,7 +27,7 @@ export default function AuthCallbackPage() {
   }, [acceptAccessToken, router]);
 
   return (
-    <main className="grid min-h-screen place-items-center bg-slate-950 px-6 text-slate-200">
+    <main className="grid min-h-screen place-items-center bg-background px-6 text-foreground">
       <p>{message}</p>
     </main>
   );
