@@ -683,10 +683,32 @@ function ResultScreen({
   payload: CandidatePayload;
   attempt: CandidateAttempt;
 }) {
+  const [retrying, setRetrying] = useState(false);
+  const [retryError, setRetryError] = useState<string | null>(null);
   const result = attempt.result ?? legacyAttemptResult(payload, attempt);
   const scoreMaximum =
     (result.score.listening.total > 0 ? 495 : 0) +
     (result.score.reading.total > 0 ? 495 : 0);
+
+  async function startRetry() {
+    setRetrying(true);
+    setRetryError(null);
+    try {
+      const response = await apiFetch(`/attempts/${attempt.id}/retry`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ maxQuestions: 100 }),
+      });
+      if (!response.ok) throw new Error(await responseMessage(response));
+      const session = (await response.json()) as { id: string };
+      window.location.href = `/practice/${session.id}`;
+    } catch (reason) {
+      setRetryError(
+        reason instanceof Error ? reason.message : "Không tạo được bài luyện lại",
+      );
+      setRetrying(false);
+    }
+  }
 
   return (
     <div className="min-h-screen bg-[#eef4fb] text-slate-800">
@@ -760,16 +782,19 @@ function ResultScreen({
               <SummaryMetric label="Lượt quay lại" value={result.analytics.revisitCount} compact />
               <SummaryMetric label="Câu cuối bỏ trống" value={result.analytics.finalUnansweredCount} compact />
             </section>
+            {retryError && <p className="mt-4 rounded-xl bg-red-50 p-4 text-center text-sm font-bold text-red-700">{retryError}</p>}
           </div>
         </main>
 
-        <footer className="flex min-h-16 items-center justify-center border-t border-slate-200 bg-[#f3f4f6] px-4 py-3">
+        <footer className="flex min-h-16 flex-wrap items-center justify-center gap-2 border-t border-slate-200 bg-[#f3f4f6] px-4 py-3">
           <Link
             href="/tests"
-            className="rounded-md bg-[#07579a] px-6 py-2.5 text-sm font-bold text-white shadow-sm transition-colors hover:bg-[#064a82]"
+            className="rounded-md border border-slate-300 bg-white px-5 py-2.5 text-sm font-bold text-slate-700 shadow-sm transition-colors hover:bg-slate-50"
           >
             Về danh sách đề
           </Link>
+          <Link href={`/review/${attempt.id}`} className="rounded-md bg-[#07579a] px-5 py-2.5 text-sm font-bold text-white shadow-sm transition-colors hover:bg-[#064a82]">Xem lại đáp án</Link>
+          {result.wrongCount > 0 && <button onClick={() => void startRetry()} disabled={retrying} className="rounded-md bg-emerald-600 px-5 py-2.5 text-sm font-bold text-white shadow-sm transition hover:bg-emerald-700 disabled:opacity-50">{retrying ? "Đang tạo…" : `Luyện lại ${result.wrongCount} câu sai`}</button>}
         </footer>
       </section>
     </div>

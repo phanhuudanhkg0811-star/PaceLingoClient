@@ -119,3 +119,66 @@ select {
   background: rgb(71 85 105 / 58%);
   background-clip: padding-box;
 }
+
+.safe-content-html {
+  color: inherit;
+  font: inherit;
+  line-height: 1.65;
+  overflow-wrap: anywhere;
+}
+
+.safe-content-html--compact {
+  font-size: 1.0625rem;
+  line-height: 1.6;
+}
+
+.safe-content-html > :first-child {
+  margin-top: 0;
+}
+
+.safe-content-html > :last-child {
+  margin-bottom: 0;
+}
+
+.safe-content-html p {
+  margin-block: 0.55em;
+}
+
+.safe-content-html ul,
+.safe-content-html ol {
+  margin-block: 0.65em;
+  padding-left: 1.5rem;
+}
+
+.safe-content-html ul {
+  list-style: disc;
+}
+
+.safe-content-html ol {
+  list-style: decimal;
+}
+
+.safe-content-html table {
+  width: 100%;
+  border-collapse: collapse;
+  background: transparent;
+}
+
+.safe-content-html th,
+.safe-content-html td {
+  border: 1px solid var(--border);
+  padding: 0.5rem;
+  text-align: left;
+  vertical-align: top;
+}
+
+.safe-content-html img {
+  max-width: 100%;
+  height: auto;
+}
+
+.safe-content-html a {
+  color: var(--accent-strong);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
