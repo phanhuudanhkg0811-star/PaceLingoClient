@@ -12,6 +12,8 @@ import {
 import { loadCandidateSnapshot } from "@/lib/candidate-loader";
 import type {
   AttemptAnswer,
+  AttemptPartResult,
+  AttemptResult,
   AttemptTiming,
   CandidateAttempt,
   CandidateGroup,
@@ -260,6 +262,7 @@ export function CandidateExam({ testId }: { testId: string }) {
         selectedOptionId: optionId,
         isFlagged: previous?.isFlagged ?? false,
         answeredAt: new Date().toISOString(),
+        isCorrect: null,
         clientSequence: (previous?.clientSequence ?? 0) + 1,
       };
       answerRecordsRef.current[questionId] = next;
@@ -281,6 +284,7 @@ export function CandidateExam({ testId }: { testId: string }) {
         selectedOptionId: previous?.selectedOptionId ?? null,
         isFlagged: !(previous?.isFlagged ?? false),
         answeredAt: previous?.answeredAt ?? null,
+        isCorrect: previous?.isCorrect ?? null,
         clientSequence: (previous?.clientSequence ?? 0) + 1,
       };
       answerRecordsRef.current[questionId] = next;
@@ -679,40 +683,15 @@ function ResultScreen({
   payload: CandidatePayload;
   attempt: CandidateAttempt;
 }) {
-  const listeningTotal = payload.sections
-    .filter((section) => section.kind === "LISTENING")
-    .flatMap((section) => section.questionGroups)
-    .flatMap((group) => group.questions).length;
-  const readingTotal = payload.sections
-    .filter((section) => section.kind === "READING")
-    .flatMap((section) => section.questionGroups)
-    .flatMap((group) => group.questions).length;
-  const listeningCorrect = attempt.listeningCorrect ?? 0;
-  const readingCorrect = attempt.readingCorrect ?? 0;
-  const listeningScore = sectionScore(
-    attempt.listeningScore,
-    listeningCorrect,
-    listeningTotal,
-  );
-  const readingScore = sectionScore(
-    attempt.readingScore,
-    readingCorrect,
-    readingTotal,
-  );
-  const sectionCount = Number(listeningTotal > 0) + Number(readingTotal > 0);
-  const maximumScore = sectionCount * 495;
-  const minimumScore = 0;
-  const totalScore =
-    attempt.totalScore ?? (listeningScore ?? 0) + (readingScore ?? 0);
-  const isEstimated =
-    attempt.totalScore === null ||
-    (listeningTotal > 0 && attempt.listeningScore === null) ||
-    (readingTotal > 0 && attempt.readingScore === null);
+  const result = attempt.result ?? legacyAttemptResult(payload, attempt);
+  const scoreMaximum =
+    (result.score.listening.total > 0 ? 495 : 0) +
+    (result.score.reading.total > 0 ? 495 : 0);
 
   return (
-    <div className="min-h-screen bg-white text-slate-800">
-      <section className="flex min-h-screen w-full flex-col overflow-hidden bg-white">
-        <header className="grid h-16 grid-cols-[44px_1fr_44px] items-center bg-[#001b47] px-4 text-white">
+    <div className="min-h-screen bg-[#eef4fb] text-slate-800">
+      <section className="flex min-h-screen w-full flex-col">
+        <header className="grid h-16 grid-cols-[44px_1fr_44px] items-center bg-[#031f48] px-4 text-white shadow-md">
           <Link
             href="/tests"
             aria-label="Quay lại danh sách đề"
@@ -720,71 +699,76 @@ function ResultScreen({
           >
             ←
           </Link>
-          <h1 className="text-center text-lg font-bold">Result</h1>
+          <h1 className="text-center text-lg font-bold">Kết quả bài thi</h1>
         </header>
 
-        <div className="flex-1 bg-[radial-gradient(circle_at_top,#ffffff_0%,#f7f9fb_58%,#edf1f5_100%)] px-4 py-8 sm:px-10 sm:py-10">
-          <div className="text-center">
-            <p className="text-xs font-bold uppercase tracking-[0.2em] text-emerald-600">
-              {attempt.status === "AUTO_SUBMITTED"
-                ? "Hết giờ · Đã tự động nộp bài"
-                : "Đã hoàn thành bài thi"}
-            </p>
-            <h2 className="mt-2 text-2xl font-bold text-[#082c59]">
-              {isEstimated ? "Điểm TOEIC ước tính" : "Điểm TOEIC quy đổi"}
-            </h2>
-          </div>
+        <main className="flex-1 bg-[radial-gradient(circle_at_top,#ffffff_0%,#f3f7fc_52%,#e8f0f9_100%)] px-4 py-8 sm:px-8 lg:px-12">
+          <div className="mx-auto max-w-6xl">
+            <div className="text-center">
+              <p className="text-xs font-extrabold uppercase tracking-[0.2em] text-emerald-600">
+                {attempt.status === "AUTO_SUBMITTED"
+                  ? "Hết giờ · Đã tự động nộp bài"
+                  : "Đã hoàn thành bài thi"}
+              </p>
+              <h2 className="mt-2 text-2xl font-black text-[#082c59] sm:text-3xl">{payload.test.title}</h2>
+            </div>
 
-          <div className="mx-auto mt-7 max-w-xl rounded-lg border-2 border-[#78aee0] bg-[#f7fbff] px-6 py-5 shadow-sm">
-            <p className="text-center text-sm font-semibold text-slate-500">Your score</p>
-            <p className="mt-1 text-center text-4xl font-black text-[#0b4f8a]">
-              {totalScore}
-              <span className="ml-1 text-base font-bold text-slate-400">/{maximumScore}</span>
-            </p>
-            <ScoreRail
-              score={totalScore}
-              minimum={minimumScore}
-              maximum={maximumScore}
-              color="#1677c8"
-            />
-          </div>
-
-          <div className={`mx-auto mt-6 grid max-w-4xl gap-5 ${listeningTotal > 0 && readingTotal > 0 ? "md:grid-cols-2" : "max-w-2xl"}`}>
-            {listeningTotal > 0 && listeningScore !== null && (
-              <ResultSectionCard
-                title="Listening"
-                score={listeningScore}
-                correct={listeningCorrect}
-                total={listeningTotal}
-                accent="#1677c8"
-                tint="#dceeff"
+            <section className="mx-auto mt-7 max-w-2xl rounded-2xl border border-blue-200 bg-white px-6 py-6 shadow-[0_18px_60px_rgba(18,73,126,0.12)] sm:px-10">
+              <p className="text-center text-sm font-bold text-slate-500">
+                {result.score.hasConversion ? "Điểm quy đổi tham khảo" : "Tổng số câu đúng"}
+              </p>
+              <p className="mt-1 text-center text-5xl font-black text-[#075fa8]">
+                {result.score.hasConversion ? result.score.totalScaled : result.correctCount}
+                <span className="ml-1 text-base font-bold text-slate-400">
+                  /{result.score.hasConversion ? scoreMaximum : result.questionCount}
+                </span>
+              </p>
+              <ScoreRail
+                score={result.score.hasConversion ? (result.score.totalScaled ?? 0) : result.correctCount}
+                minimum={0}
+                maximum={result.score.hasConversion ? scoreMaximum : result.questionCount}
+                color="#1677c8"
               />
-            )}
-            {readingTotal > 0 && readingScore !== null && (
-              <ResultSectionCard
-                title="Reading"
-                score={readingScore}
-                correct={readingCorrect}
-                total={readingTotal}
-                accent="#4f6fc7"
-                tint="#e9efff"
-              />
-            )}
-          </div>
+              <p className="mt-5 text-center text-xs leading-5 text-slate-500">
+                {result.score.hasConversion
+                  ? `Dùng bảng quy đổi “${result.score.profile?.name ?? "đã cấu hình"}”. Đây là điểm tham khảo, không phải chứng chỉ TOEIC chính thức.`
+                  : "Đề chưa có bảng quy đổi phù hợp nên hệ thống chỉ hiển thị raw score, không suy điểm TOEIC bằng tỷ lệ phần trăm."}
+              </p>
+            </section>
 
-          <p className="mx-auto mt-6 max-w-3xl text-center text-xs leading-5 text-slate-500">
-            {isEstimated
-              ? "Điểm được ước tính từ tỷ lệ câu đúng để mô phỏng thang TOEIC. Đây không phải bảng điểm chính thức và có thể thay đổi khi đề được gắn bảng quy đổi riêng."
-              : "Điểm được tính bằng bảng quy đổi đã cấu hình cho phiên bản đề này."}
-          </p>
-        </div>
+            <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              <SummaryMetric label="Đúng" value={result.correctCount} tone="text-emerald-600" />
+              <SummaryMetric label="Sai" value={result.wrongCount} tone="text-rose-600" />
+              <SummaryMetric label="Bỏ trống" value={result.unansweredCount} tone="text-amber-600" />
+              <SummaryMetric label="Thời gian làm" value={formatClock(result.durationMs)} tone="text-[#075fa8]" />
+            </div>
+
+            <div className={`mt-5 grid gap-5 ${result.score.listening.total > 0 && result.score.reading.total > 0 ? "md:grid-cols-2" : "mx-auto max-w-2xl"}`}>
+              {result.score.listening.total > 0 && (
+                <ResultSectionCard title="Listening" section={result.score.listening} accent="#1677c8" tint="#dceeff" />
+              )}
+              {result.score.reading.total > 0 && (
+                <ResultSectionCard title="Reading" section={result.score.reading} accent="#526dcc" tint="#e9efff" />
+              )}
+            </div>
+
+            {result.parts.length > 0 && <PartAnalytics parts={result.parts} />}
+
+            <section className="mt-5 grid gap-3 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:grid-cols-2 lg:grid-cols-4">
+              <SummaryMetric label="Thời gian active" value={formatClock(result.analytics.totalActiveTimeMs)} compact />
+              <SummaryMetric label="Câu làm quá lâu" value={result.analytics.tooLongCount} compact />
+              <SummaryMetric label="Lượt quay lại" value={result.analytics.revisitCount} compact />
+              <SummaryMetric label="Câu cuối bỏ trống" value={result.analytics.finalUnansweredCount} compact />
+            </section>
+          </div>
+        </main>
 
         <footer className="flex min-h-16 items-center justify-center border-t border-slate-200 bg-[#f3f4f6] px-4 py-3">
           <Link
             href="/tests"
             className="rounded-md bg-[#07579a] px-6 py-2.5 text-sm font-bold text-white shadow-sm transition-colors hover:bg-[#064a82]"
           >
-            Back
+            Về danh sách đề
           </Link>
         </footer>
       </section>
@@ -794,20 +778,16 @@ function ResultScreen({
 
 function ResultSectionCard({
   title,
-  score,
-  correct,
-  total,
+  section,
   accent,
   tint,
 }: {
   title: string;
-  score: number;
-  correct: number;
-  total: number;
+  section: { correct: number; total: number; scaled: number | null };
   accent: string;
   tint: string;
 }) {
-  const percentage = total > 0 ? Math.round((correct / total) * 100) : 0;
+  const percentage = section.total > 0 ? Math.round((section.correct / section.total) * 100) : 0;
   return (
     <article className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
       <header
@@ -823,18 +803,21 @@ function ResultSectionCard({
           </span>
           {title}
         </span>
-        <span className="text-xs text-slate-500">{correct}/{total} correct</span>
+        <span className="text-xs text-slate-500">{section.correct}/{section.total} câu đúng</span>
       </header>
       <div className="px-6 py-5">
-        <p className="text-center text-sm font-semibold text-slate-500">Your score</p>
+        <p className="text-center text-sm font-semibold text-slate-500">Raw score</p>
         <p className="mt-1 text-center text-3xl font-black" style={{ color: accent }}>
-          {score}
-          <span className="ml-1 text-sm text-slate-400">/495</span>
+          {section.correct}
+          <span className="ml-1 text-sm text-slate-400">/{section.total}</span>
         </p>
-        <ScoreRail score={score} minimum={0} maximum={495} color={accent} />
+        <ScoreRail score={section.correct} minimum={0} maximum={section.total} color={accent} />
+        {section.scaled !== null && (
+          <p className="mt-4 rounded-lg bg-blue-50 px-3 py-2 text-center text-sm font-bold text-[#075fa8]">Điểm quy đổi: {section.scaled}/495</p>
+        )}
         <div className="mt-5 rounded-md bg-slate-50 px-4 py-3">
           <p className="text-xs font-bold uppercase tracking-wider text-slate-400">
-            Performance · {percentage}%
+            Hiệu suất · {percentage}%
           </p>
           <p className="mt-2 text-sm leading-6 text-slate-600">
             {scoreFeedback(title, percentage)}
@@ -880,14 +863,6 @@ function ScoreRail({
   );
 }
 
-function sectionScore(serverScore: number | null, correct: number, total: number) {
-  if (total <= 0) return null;
-  if (correct <= 0) return 0;
-  if (serverScore !== null) return serverScore;
-  const estimated = (correct / total) * 495;
-  return Math.min(495, Math.max(0, Math.round(estimated / 5) * 5));
-}
-
 function scoreFeedback(section: string, percentage: number) {
   const skill = section === "Listening" ? "nghe hiểu" : "đọc hiểu";
   if (percentage >= 85) {
@@ -900,6 +875,151 @@ function scoreFeedback(section: string, percentage: number) {
     return `Bạn đã nắm được nền tảng ${skill}. Nên xem lại câu sai và luyện thêm theo từng Part.`;
   }
   return `Bạn nên củng cố nền tảng ${skill}, làm lại các câu sai và luyện từng nhóm câu ngắn trước.`;
+}
+
+function SummaryMetric({
+  label,
+  value,
+  tone = "text-[#0b315e]",
+  compact = false,
+}: {
+  label: string;
+  value: number | string;
+  tone?: string;
+  compact?: boolean;
+}) {
+  return (
+    <article className={compact ? "rounded-xl bg-slate-50 px-4 py-3" : "rounded-xl border border-slate-200 bg-white px-5 py-4 shadow-sm"}>
+      <p className="text-xs font-bold uppercase tracking-wider text-slate-400">{label}</p>
+      <p className={`mt-1 font-black ${compact ? "text-xl" : "text-2xl"} ${tone}`}>{value}</p>
+    </article>
+  );
+}
+
+function PartAnalytics({ parts }: { parts: AttemptPartResult[] }) {
+  return (
+    <section className="mt-5 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
+      <header className="border-b border-slate-200 bg-[#082c59] px-5 py-4 text-white">
+        <h3 className="font-extrabold">Kết quả theo từng Part</h3>
+        <p className="mt-1 text-xs text-blue-100">Thời gian chỉ tính lúc tab đang mở và câu hỏi đang active.</p>
+      </header>
+      <div className="grid gap-3 p-4 md:grid-cols-2 xl:grid-cols-3">
+        {parts.map((part) => {
+          const percentage = part.total > 0 ? Math.round((part.correct / part.total) * 100) : 0;
+          return (
+            <article key={part.part} className="rounded-xl border border-slate-200 bg-slate-50/70 p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="text-lg font-black text-[#075fa8]">{partLabel(part.part)}</p>
+                  <p className="text-xs text-slate-500">{part.correct}/{part.total} đúng · {part.unanswered} bỏ trống</p>
+                </div>
+                <span className="rounded-full bg-blue-100 px-2.5 py-1 text-xs font-black text-[#075fa8]">{percentage}%</span>
+              </div>
+              <div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-200">
+                <div className="h-full rounded-full bg-gradient-to-r from-[#1677c8] to-[#55a7e8]" style={{ width: `${percentage}%` }} />
+              </div>
+              <dl className="mt-4 grid grid-cols-2 gap-2 text-xs">
+                <PartMetric label="Tổng thời gian" value={formatClock(part.activeTimeMs)} />
+                <PartMetric label="TB mỗi câu" value={formatCompactTime(part.averageTimeMs)} />
+                <PartMetric label={`Quá ${Math.round(part.thresholdMs / 1000)} giây`} value={`${part.tooLongCount} câu`} />
+                <PartMetric label="Quay lại" value={`${part.revisitCount} lượt`} />
+              </dl>
+              <div className="mt-3 grid grid-cols-2 gap-x-3 gap-y-1 border-t border-slate-200 pt-3 text-[11px] text-slate-500">
+                <span>Nhanh + đúng: <b className="text-emerald-600">{part.performance.fastCorrect}</b></span>
+                <span>Nhanh + sai: <b className="text-rose-500">{part.performance.fastWrong}</b></span>
+                <span>Chậm + đúng: <b className="text-emerald-600">{part.performance.slowCorrect}</b></span>
+                <span>Chậm + sai: <b className="text-rose-500">{part.performance.slowWrong}</b></span>
+              </div>
+            </article>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
+function PartMetric({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-lg bg-white px-3 py-2">
+      <dt className="text-slate-400">{label}</dt>
+      <dd className="mt-0.5 font-bold text-slate-700">{value}</dd>
+    </div>
+  );
+}
+
+function partLabel(part: AttemptPartResult["part"]) {
+  return `Part ${part.replace("PART_", "")}`;
+}
+
+function formatCompactTime(milliseconds: number) {
+  if (milliseconds < 60_000) return `${Math.round(milliseconds / 1000)} giây`;
+  const minutes = Math.floor(milliseconds / 60_000);
+  const seconds = Math.round((milliseconds % 60_000) / 1000);
+  return `${minutes}p ${seconds}s`;
+}
+
+function legacyAttemptResult(
+  payload: CandidatePayload,
+  attempt: CandidateAttempt,
+): AttemptResult {
+  const listeningTotal = payload.sections
+    .filter((section) => section.kind === "LISTENING")
+    .flatMap((section) => section.questionGroups)
+    .flatMap((group) => group.questions).length;
+  const readingTotal = payload.sections
+    .filter((section) => section.kind === "READING")
+    .flatMap((section) => section.questionGroups)
+    .flatMap((group) => group.questions).length;
+  const answeredCount = attempt.answers.filter(
+    (answer) => answer.selectedOptionId !== null,
+  ).length;
+  const correctCount =
+    (attempt.listeningCorrect ?? 0) + (attempt.readingCorrect ?? 0);
+  const hasConversion = attempt.totalScore !== null;
+  return {
+    schemaVersion: 1,
+    questionCount: listeningTotal + readingTotal,
+    answeredCount,
+    unansweredCount: listeningTotal + readingTotal - answeredCount,
+    correctCount,
+    wrongCount: Math.max(0, answeredCount - correctCount),
+    durationMs: Math.max(
+      0,
+      new Date(attempt.submittedAt ?? attempt.expiresAt).getTime() -
+        new Date(attempt.startedAt).getTime(),
+    ),
+    score: {
+      hasConversion,
+      profile: null,
+      listening: {
+        correct: attempt.listeningCorrect ?? 0,
+        total: listeningTotal,
+        scaled: hasConversion ? attempt.listeningScore : null,
+      },
+      reading: {
+        correct: attempt.readingCorrect ?? 0,
+        total: readingTotal,
+        scaled: hasConversion ? attempt.readingScore : null,
+      },
+      totalScaled: hasConversion ? attempt.totalScore : null,
+    },
+    analytics: {
+      totalActiveTimeMs: attempt.timings.reduce(
+        (sum, timing) => sum + timing.activeTimeMs,
+        0,
+      ),
+      tooLongCount: 0,
+      finalUnansweredCount: 0,
+      revisitCount: attempt.timings.reduce(
+        (sum, timing) => sum + Math.max(0, timing.visitCount - 1),
+        0,
+      ),
+      revisitedQuestionCount: attempt.timings.filter(
+        (timing) => timing.visitCount > 1,
+      ).length,
+    },
+    parts: [],
+  };
 }
 
 function ListeningPlayer({

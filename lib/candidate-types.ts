@@ -138,6 +138,7 @@ export interface AttemptAnswer {
   selectedOptionId: string | null;
   isFlagged: boolean;
   answeredAt: string | null;
+  isCorrect: boolean | null;
   clientSequence: number;
 }
 
@@ -167,9 +168,61 @@ export interface CandidateAttempt {
   listeningScore: number | null;
   readingScore: number | null;
   totalScore: number | null;
+  result: AttemptResult | null;
   answers: AttemptAnswer[];
   timings: AttemptTiming[];
   serverNow: string;
+}
+
+export interface AttemptResult {
+  schemaVersion: 1;
+  questionCount: number;
+  answeredCount: number;
+  unansweredCount: number;
+  correctCount: number;
+  wrongCount: number;
+  durationMs: number;
+  score: {
+    hasConversion: boolean;
+    profile: {
+      name: string;
+      source: string | null;
+      version: number;
+      isOfficial: boolean;
+    } | null;
+    listening: { correct: number; total: number; scaled: number | null };
+    reading: { correct: number; total: number; scaled: number | null };
+    totalScaled: number | null;
+  };
+  analytics: {
+    totalActiveTimeMs: number;
+    tooLongCount: number;
+    finalUnansweredCount: number;
+    revisitCount: number;
+    revisitedQuestionCount: number;
+  };
+  parts: AttemptPartResult[];
+}
+
+export interface AttemptPartResult {
+  part: CandidatePart;
+  total: number;
+  answered: number;
+  correct: number;
+  wrong: number;
+  unanswered: number;
+  activeTimeMs: number;
+  averageTimeMs: number;
+  tooLongCount: number;
+  revisitCount: number;
+  revisitedQuestionCount: number;
+  thresholdMs: number;
+  performance: {
+    fastCorrect: number;
+    fastWrong: number;
+    slowCorrect: number;
+    slowWrong: number;
+  };
 }
 
 export function parseCandidatePayload(value: unknown): CandidatePayload {
