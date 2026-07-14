@@ -1,0 +1,46 @@
+{
+  "schemaVersion": 1,
+  "externalId": "sample-part-5-v1",
+  "test": {
+    "title": "Sample TOEIC Part 5",
+    "description": "A small schemaVersion 1 import example.",
+    "type": "PART_PRACTICE",
+    "durationMinutes": 15
+  },
+  "sections": [
+    {
+      "title": "Incomplete Sentences",
+      "kind": "READING",
+      "part": "PART_5",
+      "order": 0,
+      "directionMode": "DEFAULT",
+      "questionGroups": [
+        {
+          "externalId": "p5-group-001",
+          "type": "INCOMPLETE_SENTENCE",
+          "order": 0,
+          "questions": [
+            {
+              "externalId": "p5-q101",
+              "number": 101,
+              "promptHtml": "<p>The conference room is _____ for the meeting at 2 P.M.</p>",
+              "correctOption": "B",
+              "explanationHtml": "<p>An adjective is required after the linking verb.</p>",
+              "grammarTopic": "Adjectives",
+              "vocabularyTags": ["meeting", "office"],
+              "difficulty": "EASY",
+              "order": 0,
+              "options": [
+                { "label": "A", "contentHtml": "prepare", "order": 0 },
+                { "label": "B", "contentHtml": "ready", "order": 1 },
+                { "label": "C", "contentHtml": "readily", "order": 2 },
+                { "label": "D", "contentHtml": "readiness", "order": 3 }
+              ]
+            }
+          ],
+          "stimuli": []
+        }
+      ]
+    }
+  ]
+}

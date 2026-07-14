@@ -52,15 +52,21 @@ export default function AdminPage() {
               </p>
             </Link>
 
-            <div className="rounded-3xl border border-dashed border-border bg-surface/60 p-7">
-              <span className="grid size-12 place-items-center rounded-2xl bg-surface-raised text-2xl">
-                ✎
+            <Link
+              href="/admin/imports"
+              className="group rounded-3xl border border-border bg-surface p-7 shadow-[0_18px_50px_rgba(var(--shadow),0.08)] transition hover:-translate-y-1 hover:border-accent/50"
+            >
+              <span className="grid size-12 place-items-center rounded-2xl bg-accent-soft text-2xl text-accent-strong">
+                {"{}"}
               </span>
-              <h2 className="mt-6 text-xl font-bold">Test Editor</h2>
+              <h2 className="mt-6 text-xl font-bold group-hover:text-accent">
+                Import JSON
+              </h2>
               <p className="mt-2 leading-7 text-muted">
-                Sẽ được nối với import và editor trong Phase 6–7.
+                Parse, kiểm tra và chuyển đề từ JSON thành bản nháp có thể chỉnh
+                sửa.
               </p>
-            </div>
+            </Link>
           </div>
 
           <Link
