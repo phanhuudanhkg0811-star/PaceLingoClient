@@ -423,7 +423,8 @@ function MetadataForm({
   const [description, setDescription] = useState(test.description ?? "");
   const [duration, setDuration] = useState(test.durationMinutes);
   const [audioId, setAudioId] = useState(test.fullListeningAudioId ?? "");
-  async function save(fullAudioId = audioId) {
+  const [testType, setTestType] = useState(test.type);
+  async function save(fullAudioId = audioId, nextType = testType) {
     if (!editable) return;
     await mutate(`/admin/tests/${test.id}`, {
       method: "PATCH",
@@ -431,6 +432,7 @@ function MetadataForm({
       body: JSON.stringify({
         title,
         description: description || null,
+        type: nextType,
         durationMinutes: duration,
         fullListeningAudioId: fullAudioId || null,
       }),
@@ -457,6 +459,23 @@ function MetadataForm({
         placeholder="Mô tả đề"
         className="mt-2 w-full rounded-lg border border-border bg-background px-3 py-2 text-xs"
       />
+      <label className="mt-2 block text-[10px] text-muted">
+        Loại đề
+        <select
+          value={testType}
+          disabled={!editable}
+          onChange={(event) => {
+            const value = event.target.value as TestTree["type"];
+            setTestType(value);
+            queueMicrotask(() => void save(audioId, value));
+          }}
+          className="mt-1 w-full rounded-lg border border-border bg-background px-2 py-2 text-xs text-foreground"
+        >
+          <option value="FULL_TEST">Full Test · chuẩn 200 câu</option>
+          <option value="MINI_TEST">Mini Test · tùy Part/số câu</option>
+          <option value="PART_PRACTICE">Part Practice · luyện một Part</option>
+        </select>
+      </label>
       <div className="mt-2 grid grid-cols-2 gap-2">
         <label className="text-[10px] text-muted">
           Phút

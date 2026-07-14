@@ -42,6 +42,12 @@ export default function Home() {
           >
             Xem lịch sử
           </Link>
+          <Link
+            href="/tests"
+            className="rounded-full bg-accent px-5 py-2.5 text-sm font-bold text-white dark:text-slate-950"
+          >
+            Vào phòng thi
+          </Link>
           <a
             href={`${apiUrl}/health`}
             target="_blank"
