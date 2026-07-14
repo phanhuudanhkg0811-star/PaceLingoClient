@@ -50,7 +50,7 @@ export function TestDraftList() {
               ← Trung tâm quản trị
             </Link>
             <p className="mt-6 text-xs font-bold uppercase tracking-[0.24em] text-accent">
-              Phase 7 · Authoring
+              Test authoring
             </p>
             <h1 className="mt-2 text-3xl font-bold sm:text-5xl">Test Drafts</h1>
             <p className="mt-3 text-muted">

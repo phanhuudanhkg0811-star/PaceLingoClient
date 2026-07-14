@@ -235,7 +235,7 @@ export function DirectionTemplateManager() {
               ← Trung tâm quản trị
             </Link>
             <p className="mt-6 text-xs font-bold uppercase tracking-[0.24em] text-accent">
-              Phase 5 · Test fidelity
+              Test fidelity
             </p>
             <h1 className="mt-2 text-3xl font-bold tracking-tight sm:text-5xl">
               Direction Templates

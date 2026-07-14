@@ -285,7 +285,7 @@ export function JsonImportWorkbench() {
               ← Trung tâm quản trị
             </Link>
             <p className="mt-6 text-xs font-bold uppercase tracking-[0.24em] text-accent">
-              Phase 6 · Content pipeline
+              Content pipeline
             </p>
             <h1 className="mt-2 text-3xl font-bold tracking-tight sm:text-5xl">
               Import đề từ JSON
@@ -457,7 +457,7 @@ export function JsonImportWorkbench() {
                   {allIssues.length === 0 ? (
                     <div className="mt-4 rounded-2xl bg-accent-soft p-4 text-sm font-semibold text-accent-strong">
                       ✓ Schema cơ bản hợp lệ. Media và timeline có thể thêm ở
-                      Phase 7.
+                      bước biên tập đề.
                     </div>
                   ) : (
                     <div className="mt-4 max-h-80 space-y-2 overflow-auto">

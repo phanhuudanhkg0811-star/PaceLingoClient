@@ -46,12 +46,33 @@
   --color-accent-soft: var(--accent-soft);
   --color-danger: var(--danger);
   --color-danger-soft: var(--danger-soft);
-  --font-sans: Arial, Helvetica, sans-serif;
+  --font-sans: "Roboto", "Segoe UI", "Noto Sans", system-ui, sans-serif;
   --font-mono: "Cascadia Code", Consolas, monospace;
 }
 
 * {
   border-color: var(--border);
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  min-height: 100%;
+  width: 100%;
+  overflow-x: clip;
+  background-color: var(--background);
+}
+
+html {
+  scroll-behavior: smooth;
+  scroll-padding-top: 5.5rem;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
 }
 
 body {
@@ -59,7 +80,7 @@ body {
     radial-gradient(circle at 8% 2%, color-mix(in srgb, var(--accent) 10%, transparent), transparent 28rem),
     var(--background);
   color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: "Roboto", "Segoe UI", "Noto Sans", system-ui, sans-serif;
   transition: background-color 180ms ease, color 180ms ease;
 }
 

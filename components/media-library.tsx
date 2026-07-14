@@ -175,7 +175,7 @@ export function MediaLibrary() {
             <Link href="/admin" className="text-sm font-semibold text-accent hover:text-accent-strong">
               ← Trung tâm quản trị
             </Link>
-            <p className="mt-6 text-xs font-bold uppercase tracking-[0.24em] text-accent">Phase 4</p>
+            <p className="mt-6 text-xs font-bold uppercase tracking-[0.24em] text-accent">Media storage</p>
             <h1 className="mt-2 text-3xl font-bold tracking-tight sm:text-5xl">Thư viện Media</h1>
             <p className="mt-3 max-w-2xl leading-7 text-muted">
               Một nơi cho toàn bộ ảnh, passage và audio của đề thi TOEIC.

@@ -626,7 +626,7 @@ function ResultScreen({
   );
   const sectionCount = Number(listeningTotal > 0) + Number(readingTotal > 0);
   const maximumScore = sectionCount * 495;
-  const minimumScore = sectionCount * 5;
+  const minimumScore = 0;
   const totalScore =
     attempt.totalScore ?? (listeningScore ?? 0) + (readingScore ?? 0);
   const isEstimated =
@@ -756,7 +756,7 @@ function ResultSectionCard({
           {score}
           <span className="ml-1 text-sm text-slate-400">/495</span>
         </p>
-        <ScoreRail score={score} minimum={5} maximum={495} color={accent} />
+        <ScoreRail score={score} minimum={0} maximum={495} color={accent} />
         <div className="mt-5 rounded-md bg-slate-50 px-4 py-3">
           <p className="text-xs font-bold uppercase tracking-wider text-slate-400">
             Performance · {percentage}%
@@ -807,9 +807,10 @@ function ScoreRail({
 
 function sectionScore(serverScore: number | null, correct: number, total: number) {
   if (total <= 0) return null;
+  if (correct <= 0) return 0;
   if (serverScore !== null) return serverScore;
-  const estimated = 5 + (correct / total) * 490;
-  return Math.min(495, Math.max(5, Math.round(estimated / 5) * 5));
+  const estimated = (correct / total) * 495;
+  return Math.min(495, Math.max(0, Math.round(estimated / 5) * 5));
 }
 
 function scoreFeedback(section: string, percentage: number) {
@@ -1019,7 +1020,7 @@ function ReadingPlayer({
           )}
         </section>
         <section className="exam-scrollbar min-h-0 overflow-y-auto border border-[#d7dde6] bg-white p-5 shadow-[0_1px_2px_rgb(15_23_42/4%)]">
-          <h2 className="sticky -top-5 z-10 -mx-5 -mt-5 mb-5 border-b border-slate-200 bg-white/95 px-5 py-4 font-semibold text-[#124b78]">
+          <h2 className="sticky -top-5 z-10 -mx-5 -mt-5 mb-5 border-b border-slate-200 bg-white/95 px-5 py-4 text-lg font-semibold text-[#124b78]">
             Question
           </h2>
           <QuestionList
@@ -1189,11 +1190,11 @@ function QuestionList({
     <div className="space-y-8">
       {questions.map((question) => (
         <article key={question.id} onClick={() => onActivate?.(question.id)}>
-          <div className="flex gap-3"><strong>{question.number}.</strong><SafeHtml html={question.promptHtml} compact /></div>
-          <div className="mt-3 space-y-2 pl-8">
+          <div className="flex gap-3 text-[17px] leading-7"><strong className="shrink-0">{question.number}.</strong><SafeHtml html={question.promptHtml} compact /></div>
+          <div className="mt-4 space-y-2.5 pl-8">
             {question.options.map((option) => (
-              <label key={option.id} className={`flex cursor-pointer items-center gap-3 border px-4 py-3 ${answers[question.id] === option.id ? "border-[#2b69a9] bg-blue-50" : "border-slate-200"}`}>
-                <input type="radio" name={question.id} checked={answers[question.id] === option.id} onChange={() => setAnswer(question.id, option.id)} className="size-4 accent-[#07579a]" />
+              <label key={option.id} className={`flex cursor-pointer items-center gap-3.5 border px-4 py-3.5 text-[17px] leading-7 transition-colors ${answers[question.id] === option.id ? "border-[#2b69a9] bg-blue-50" : "border-slate-200 hover:border-blue-300 hover:bg-blue-50/40"}`}>
+                <input type="radio" name={question.id} checked={answers[question.id] === option.id} onChange={() => setAnswer(question.id, option.id)} className="size-5 shrink-0 accent-[#07579a]" />
                 <span><strong>({option.label})</strong> <HtmlText html={option.contentHtml} /></span>
               </label>
             ))}
@@ -1216,9 +1217,10 @@ function SafeHtml({ html, compact = false }: { html: string; compact?: boolean }
   const textLength = html.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").length;
   const blocks = (html.match(/<(p|div|article|table|tr|li|header|section)\b/gi) ?? []).length;
   const height = compact
-    ? Math.min(300, Math.max(32, Math.ceil(textLength / 65) * 24 + blocks * 10 + 4))
-    : Math.min(5000, Math.max(180, Math.ceil(textLength / 55) * 25 + blocks * 18 + 70));
-  return <iframe sandbox="" scrolling="no" srcDoc={`<!doctype html><meta charset="utf-8"><style>html,body{overflow:hidden}body{font:15px/1.6 Arial;margin:0;color:#172033}table{border-collapse:collapse;width:100%}td,th{border:1px solid #aaa;padding:7px}img{max-width:100%}</style>${html}`} style={{ height }} className="block w-full border-0 bg-white" title="Candidate content" />;
+    ? Math.min(340, Math.max(38, Math.ceil(textLength / 60) * 28 + blocks * 11 + 5))
+    : Math.min(5000, Math.max(180, Math.ceil(textLength / 55) * 28 + blocks * 18 + 70));
+  const fontSize = compact ? 17 : 16;
+  return <iframe sandbox="" scrolling="no" srcDoc={`<!doctype html><meta charset="utf-8"><style>html,body{overflow:hidden}body{font:${fontSize}px/1.65 Roboto,"Segoe UI","Noto Sans",system-ui,sans-serif;margin:0;color:#172033}p:first-child{margin-top:0}p:last-child{margin-bottom:0}table{border-collapse:collapse;width:100%}td,th{border:1px solid #aaa;padding:8px}img{max-width:100%}</style>${html}`} style={{ height }} className="block w-full border-0 bg-white" title="Candidate content" />;
 }
 
 function HtmlText({ html }: { html: string }) {
