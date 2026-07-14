@@ -35,6 +35,7 @@ export function CandidateExam({ testId }: { testId: string }) {
   const [flags, setFlags] = useState<string[]>([]);
   const [activeQuestionId, setActiveQuestionId] = useState<string | null>(null);
   const [remainingMs, setRemainingMs] = useState(0);
+  const [audioTestPlaying, setAudioTestPlaying] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [cacheSource, setCacheSource] = useState<"network" | "cache" | null>(null);
@@ -48,6 +49,36 @@ export function CandidateExam({ testId }: { testId: string }) {
   const timingSessionRef = useRef<{ questionId: string; startedAt: number } | null>(null);
   const serverOffsetRef = useRef(0);
   const flushPromiseRef = useRef<Promise<void> | null>(null);
+
+  const playAudioTest = useCallback(() => {
+    if (audioTestPlaying) return;
+    setAudioTestPlaying(true);
+    try {
+      const context = new AudioContext();
+      const oscillator = context.createOscillator();
+      const gain = context.createGain();
+      const panner = context.createStereoPanner();
+      oscillator.type = "sine";
+      oscillator.frequency.setValueAtTime(440, context.currentTime);
+      oscillator.frequency.setValueAtTime(620, context.currentTime + 0.8);
+      panner.pan.setValueAtTime(-0.65, context.currentTime);
+      panner.pan.linearRampToValueAtTime(0.65, context.currentTime + 1.6);
+      gain.gain.setValueAtTime(0.0001, context.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.18, context.currentTime + 0.08);
+      gain.gain.setValueAtTime(0.18, context.currentTime + 1.45);
+      gain.gain.exponentialRampToValueAtTime(0.0001, context.currentTime + 1.6);
+      oscillator.connect(gain).connect(panner).connect(context.destination);
+      oscillator.start();
+      oscillator.stop(context.currentTime + 1.62);
+      oscillator.onended = () => {
+        void context.close();
+        setAudioTestPlaying(false);
+      };
+    } catch {
+      setAudioTestPlaying(false);
+      setError("Trình duyệt không thể phát âm thanh kiểm tra");
+    }
+  }, [audioTestPlaying]);
 
   useEffect(() => {
     let cancelled = false;
@@ -505,8 +536,9 @@ export function CandidateExam({ testId }: { testId: string }) {
         <StartScreen
           payload={payload}
           cached={cacheSource === "cache"}
-          hasSavedRuntime={false}
+          audioTestPlaying={audioTestPlaying}
           error={error}
+          onAudioTest={playAudioTest}
           onStart={() => void startOrResume()}
         />
       )}
@@ -556,42 +588,85 @@ export function CandidateExam({ testId }: { testId: string }) {
 function StartScreen({
   payload,
   cached,
-  hasSavedRuntime,
+  audioTestPlaying,
   error,
+  onAudioTest,
   onStart,
 }: {
   payload: CandidatePayload;
   cached: boolean;
-  hasSavedRuntime: boolean;
+  audioTestPlaying: boolean;
   error: string | null;
+  onAudioTest: () => void;
   onStart: () => void;
 }) {
+  const hasListening = payload.sections.some((section) => section.kind === "LISTENING");
+  const questionCount = countQuestions(payload);
   return (
-    <div className="grid min-h-screen place-items-center p-5">
-      <section className="w-full max-w-2xl rounded-3xl bg-white p-8 shadow-2xl">
-        <p className="text-xs font-black uppercase tracking-[0.25em] text-[#07579a]">
-          TOEIC Candidate Runtime
-        </p>
-        <h1 className="mt-3 text-3xl font-bold">{payload.test.title}</h1>
-        <p className="mt-3 leading-7 text-slate-600">
-          Listening sẽ chạy liên tục và tự chuyển nội dung theo audio. Không thể
-          tạm dừng hoặc nghe lại. Reading bắt đầu khi timeline Listening kết thúc.
-        </p>
-        <div className="mt-6 grid gap-3 sm:grid-cols-3">
-          <Stat value={String(payload.test.totalQuestions)} label="Câu hỏi" />
-          <Stat value={`${payload.test.durationMinutes}'`} label="Thời lượng" />
-          <Stat value={cached ? "Cached" : "Verified"} label="Snapshot" />
+    <div className="min-h-screen bg-[radial-gradient(circle_at_top,#e6f2ff_0%,#f3f6fa_45%,#e7ebf0_100%)] p-4 sm:p-8">
+      <section className="mx-auto w-full max-w-5xl overflow-hidden rounded-3xl border border-blue-100 bg-white shadow-2xl shadow-blue-950/15">
+        <header className="bg-[#061b3a] px-6 py-7 text-white sm:px-9">
+          <p className="text-xs font-black uppercase tracking-[0.22em] text-sky-300">Before you begin</p>
+          <h1 className="mt-3 text-2xl font-black sm:text-3xl">{payload.test.title}</h1>
+          <p className="mt-2 text-sm text-blue-100/75">Hãy chuẩn bị không gian yên tĩnh và kiểm tra thiết bị trước khi bắt đầu.</p>
+        </header>
+
+        <div className="grid gap-8 p-6 sm:p-9 lg:grid-cols-[1fr_0.82fr]">
+          <div>
+            <div className="grid grid-cols-3 gap-3">
+              <StartMetric value={String(questionCount)} label="Câu hỏi" />
+              <StartMetric value={`${payload.test.durationMinutes}'`} label="Thời lượng" />
+              <StartMetric value={payload.test.type === "FULL_TEST" ? "Full" : "Mini"} label="Loại bài" />
+            </div>
+            <h2 className="mt-7 text-lg font-extrabold text-[#0b315e]">Hướng dẫn làm bài</h2>
+            <ul className="mt-4 space-y-3 text-sm leading-6 text-slate-600">
+              <InstructionItem>Đáp án được lưu tự động; reload không làm mới thời gian.</InstructionItem>
+              {hasListening && <InstructionItem>Listening tự chạy theo audio và tự chuyển nội dung.</InstructionItem>}
+              <InstructionItem>Reading cho phép chuyển trang, xem danh mục và đánh dấu câu.</InstructionItem>
+              <InstructionItem>Hết thời gian, hệ thống sẽ tự động nộp bài.</InstructionItem>
+            </ul>
+            {hasListening && (
+              <div className="mt-6 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold leading-6 text-amber-800">
+                Listening trong chế độ thi thử không thể pause, tua hoặc nghe lại.
+              </div>
+            )}
+          </div>
+
+          <aside className="rounded-2xl border border-blue-100 bg-[#f7faff] p-5 sm:p-6">
+            <div className="flex items-start gap-3">
+              <span className="grid size-11 shrink-0 place-items-center rounded-xl bg-blue-100 text-[#0b5fa5]">
+                <HeadphoneIcon />
+              </span>
+              <div>
+                <h2 className="font-extrabold text-[#0b315e]">Kiểm tra tai nghe</h2>
+                <p className="mt-1 text-xs leading-5 text-slate-500">Âm thanh sẽ di chuyển từ tai trái sang tai phải.</p>
+              </div>
+            </div>
+            <button
+              type="button"
+              onClick={onAudioTest}
+              disabled={audioTestPlaying}
+              className="mt-5 w-full rounded-xl border border-[#1677c8] bg-white px-4 py-3 text-sm font-extrabold text-[#0b5fa5] transition hover:bg-blue-50 disabled:cursor-wait disabled:opacity-60"
+            >
+              {audioTestPlaying ? "Đang phát âm thanh…" : "▶ Phát âm thanh kiểm tra"}
+            </button>
+            <div className="mt-5 space-y-2 border-t border-blue-100 pt-5 text-xs text-slate-500">
+              <p>✓ Candidate snapshot: {cached ? "đã cache" : "đã xác minh"}</p>
+              <p>✓ Autosave và khôi phục lượt thi đã sẵn sàng</p>
+            </div>
+            {error && <p className="mt-4 rounded-lg bg-red-50 p-3 text-xs text-red-700">{error}</p>}
+            <button
+              onClick={onStart}
+              disabled={audioTestPlaying}
+              className="mt-6 w-full rounded-xl bg-gradient-to-r from-[#0b4f8a] to-[#1677c8] px-5 py-4 font-extrabold text-white shadow-lg shadow-blue-900/15 transition hover:-translate-y-0.5 disabled:cursor-wait disabled:opacity-60"
+            >
+              Bắt đầu / tiếp tục bài thi
+            </button>
+            <Link href="/tests" className="mt-4 block text-center text-sm font-semibold text-slate-500 hover:text-[#0b5fa5]">
+              ← Quay lại danh sách
+            </Link>
+          </aside>
         </div>
-        {error && <p className="mt-5 rounded-xl bg-red-50 p-3 text-sm text-red-700">{error}</p>}
-        <button
-          onClick={onStart}
-          className="mt-7 w-full rounded-xl bg-[#07579a] px-5 py-4 font-bold text-white"
-        >
-          {hasSavedRuntime ? "Tiếp tục bài thi" : "Bắt đầu bài thi"}
-        </button>
-        <Link href="/tests" className="mt-4 block text-center text-sm text-slate-500">
-          ← Quay lại danh sách
-        </Link>
       </section>
     </div>
   );
@@ -851,6 +926,7 @@ function ListeningPlayer({
     (question) => question.id === timeline.questionId,
   );
   const questions = targetQuestion ? [targetQuestion] : (group?.questions ?? []);
+  const shortcutQuestion = targetQuestion ?? group?.questions[0];
   const activeTimelineQuestionId = targetQuestion?.id ?? questions[0]?.id ?? null;
   const isDirection = timeline.event?.type === "DIRECTION";
   const isExample = timeline.event?.type === "EXAMPLE";
@@ -860,6 +936,25 @@ function ListeningPlayer({
   useEffect(() => {
     onActiveQuestion(activeTimelineQuestionId);
   }, [activeTimelineQuestionId, onActiveQuestion]);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (isShortcutBlocked(event)) return;
+      if (event.code === "Space") {
+        event.preventDefault();
+        return;
+      }
+      const optionIndex = answerShortcutIndex(event.key);
+      if (optionIndex === null || isDirection || isExample) return;
+      const option = shortcutQuestion?.options[optionIndex];
+      if (!shortcutQuestion || !option) return;
+      event.preventDefault();
+      setAnswer(shortcutQuestion.id, option.id);
+      onActiveQuestion(shortcutQuestion.id);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [isDirection, isExample, onActiveQuestion, setAnswer, shortcutQuestion]);
 
   return (
     <ExamShell
@@ -965,7 +1060,7 @@ function ReadingPlayer({
   const [activeQuestionId, setActiveQuestionId] = useState(
     initialQuestionId ?? pages[initialPageIndex]?.questions[0]?.id ?? "",
   );
-  const [catalogOpen, setCatalogOpen] = useState(false);
+  const [catalogMode, setCatalogMode] = useState<"navigator" | "submit" | null>(null);
   const lastQuestionNumber = Math.max(
     payload.test.totalQuestions,
     ...pages.flatMap((item) => item.questions.map((question) => question.number)),
@@ -976,19 +1071,47 @@ function ReadingPlayer({
   const activeQuestion =
     page?.questions.find((question) => question.id === activeQuestionId) ??
     page?.questions[0];
-  function go(index: number, questionId?: string) {
+  const go = useCallback((index: number, questionId?: string) => {
     const next = pages[index];
     if (!next) return;
     setPageIndex(index);
     const nextQuestionId = questionId ?? next.questions[0]?.id ?? "";
     setActiveQuestionId(nextQuestionId);
     if (nextQuestionId) onActiveQuestion(nextQuestionId);
-    setCatalogOpen(false);
-  }
+    setCatalogMode(null);
+  }, [onActiveQuestion, pages]);
 
   useEffect(() => {
     if (activeQuestion?.id) onActiveQuestion(activeQuestion.id);
   }, [activeQuestion?.id, onActiveQuestion]);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (catalogMode || isShortcutBlocked(event)) return;
+      const optionIndex = answerShortcutIndex(event.key);
+      if (optionIndex !== null) {
+        const option = activeQuestion?.options[optionIndex];
+        if (activeQuestion && option) {
+          event.preventDefault();
+          setAnswer(activeQuestion.id, option.id);
+          onActiveQuestion(activeQuestion.id);
+        }
+        return;
+      }
+      if (event.key === "ArrowLeft" && pageIndex > 0) {
+        event.preventDefault();
+        go(pageIndex - 1);
+      } else if (event.key === "ArrowRight" && pageIndex < pages.length - 1) {
+        event.preventDefault();
+        go(pageIndex + 1);
+      } else if (event.key.toLowerCase() === "f" && activeQuestion) {
+        event.preventDefault();
+        toggleFlag(activeQuestion.id);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [activeQuestion, catalogMode, go, onActiveQuestion, pageIndex, pages.length, setAnswer, toggleFlag]);
 
   if (!page) return <ExamMessage title="Đề không có section Reading" />;
   const range = `${page.questions[0]?.number ?? "—"}${page.questions.length > 1 ? `–${page.questions.at(-1)?.number}` : ""}`;
@@ -998,7 +1121,7 @@ function ReadingPlayer({
       title={`Reading: Questions ${range} of ${lastQuestionNumber}`}
       progress={`${answeredCount}/${totalQuestionCount}`}
       timer={formatClock(remainingMs)}
-      submit={() => setCatalogOpen(true)}
+      submit={() => setCatalogMode("submit")}
     >
       <div className="grid h-[calc(100vh-120px)] grid-cols-1 grid-rows-2 gap-3 bg-[#f2f3f5] p-3 md:grid-cols-2 md:grid-rows-1 md:gap-5 md:px-5 md:py-4">
         <section className="exam-scrollbar min-h-0 overflow-y-auto border border-[#d7dde6] bg-white p-6 shadow-[0_1px_2px_rgb(15_23_42/4%)]">
@@ -1047,23 +1170,26 @@ function ReadingPlayer({
             {activeQuestion && flags.includes(activeQuestion.id) ? "✓" : ""}
           </span>
           <span>Mark item for review</span>
+          <kbd className="hidden rounded border border-slate-300 bg-white px-1.5 py-0.5 font-mono text-[10px] text-slate-500 lg:inline">F</kbd>
         </button>
-        <button onClick={() => setCatalogOpen(true)} aria-label="Question list" className="grid h-14 w-14 place-items-center bg-[#07579a] text-xl text-white transition-colors hover:bg-[#064a82]">☷</button>
+        <button onClick={() => setCatalogMode("navigator")} aria-label="Question list" className="grid h-14 w-14 place-items-center bg-[#07579a] text-xl text-white transition-colors hover:bg-[#064a82]">☷</button>
         <div className="flex">
           <NavButton disabled={pageIndex === 0} onClick={() => go(pageIndex - 1)}>←</NavButton>
           <NavButton disabled={pageIndex === pages.length - 1} onClick={() => go(pageIndex + 1)}>→</NavButton>
         </div>
       </footer>
-      {catalogOpen && (
+      {catalogMode && (
         <QuestionCatalog
+          mode={catalogMode}
           payload={payload}
           pages={pages}
           answers={answers}
           flags={flags}
           activeQuestionId={activeQuestion?.id ?? ""}
-          close={() => setCatalogOpen(false)}
+          close={() => setCatalogMode(null)}
           jump={go}
           submit={onSubmit}
+          requestSubmit={() => setCatalogMode("submit")}
           submitting={submitting}
         />
       )}
@@ -1072,6 +1198,7 @@ function ReadingPlayer({
 }
 
 function QuestionCatalog({
+  mode,
   payload,
   pages,
   answers,
@@ -1080,8 +1207,10 @@ function QuestionCatalog({
   close,
   jump,
   submit,
+  requestSubmit,
   submitting,
 }: {
+  mode: "navigator" | "submit";
   payload: CandidatePayload;
   pages: Array<{ section: CandidateSection; group: CandidateGroup; questions: CandidateQuestion[] }>;
   answers: Record<string, string>;
@@ -1090,14 +1219,31 @@ function QuestionCatalog({
   close: () => void;
   jump: (index: number, questionId?: string) => void;
   submit: () => void;
+  requestSubmit: () => void;
   submitting: boolean;
 }) {
+  const allQuestions = payload.sections.flatMap((section) =>
+    section.questionGroups.flatMap((group) => group.questions),
+  );
+  const unansweredCount = allQuestions.filter((question) => !answers[question.id]).length;
   return (
-    <div className="absolute inset-0 z-40 grid place-items-center bg-slate-950/55 p-4">
+    <div role="dialog" aria-modal="true" aria-label={mode === "submit" ? "Xác nhận nộp bài" : "Danh mục câu hỏi"} className="absolute inset-0 z-40 grid place-items-center bg-slate-950/55 p-4">
       <section className="exam-scrollbar max-h-[86vh] w-full max-w-xl overflow-y-auto rounded bg-white p-6 shadow-2xl">
         <div className="flex items-center justify-between border-b border-slate-200 pb-4">
-          <div><h2 className="text-xl font-bold text-[#07579a]">Reading</h2><p className="text-xs text-slate-500">Chọn số câu để chuyển trang.</p></div>
+          <div><h2 className="text-xl font-bold text-[#07579a]">{mode === "submit" ? "Xác nhận nộp bài" : "Danh mục câu hỏi"}</h2><p className="text-xs text-slate-500">{mode === "submit" ? "Kiểm tra tiến độ trước khi kết thúc lượt thi." : "Chọn số câu để chuyển trang."}</p></div>
           <button onClick={close} className="grid size-9 place-items-center rounded-full bg-slate-100 text-xl">×</button>
+        </div>
+        {mode === "submit" && (
+          <div className={`mt-5 rounded-xl border px-4 py-3 text-sm ${unansweredCount > 0 ? "border-amber-200 bg-amber-50 text-amber-800" : "border-emerald-200 bg-emerald-50 text-emerald-700"}`}>
+            {unansweredCount > 0
+              ? `Bạn còn ${unansweredCount} câu chưa trả lời. Bạn vẫn muốn nộp bài?`
+              : "Bạn đã trả lời tất cả câu hỏi. Bài thi đã sẵn sàng để nộp."}
+          </div>
+        )}
+        <div className="mt-4 flex flex-wrap gap-4 text-xs text-slate-500">
+          <span><i className="mr-1.5 inline-block size-3 rounded-sm bg-[#07579a]" />Đã trả lời</span>
+          <span><i className="mr-1.5 inline-block size-3 rounded-sm border border-slate-300 bg-white" />Chưa trả lời</span>
+          <span><i className="mr-1.5 inline-block size-3 rounded-sm border-2 border-[#1677c8]" />Đã flag</span>
         </div>
         <div className="mt-5 space-y-5">
           {payload.sections.filter((section) => section.kind === "READING").map((section) => (
@@ -1129,11 +1275,11 @@ function QuestionCatalog({
             Review
           </button>
           <button
-            onClick={submit}
+            onClick={mode === "submit" ? submit : requestSubmit}
             disabled={submitting}
             className="rounded bg-[#1677c8] px-4 py-2 text-sm font-bold text-white transition-colors hover:bg-[#0b5fa5] disabled:opacity-60"
           >
-            {submitting ? "Đang nộp…" : "Finish test"}
+            {submitting ? "Đang nộp…" : mode === "submit" ? "Nộp bài" : "Kết thúc bài thi"}
           </button>
         </div>
       </section>
@@ -1154,12 +1300,36 @@ function ExamShell({
   submit?: () => void;
   children: React.ReactNode;
 }) {
+  const [fullscreen, setFullscreen] = useState(false);
+
+  useEffect(() => {
+    const sync = () => setFullscreen(Boolean(document.fullscreenElement));
+    document.addEventListener("fullscreenchange", sync);
+    return () => document.removeEventListener("fullscreenchange", sync);
+  }, []);
+
+  const toggleFullscreen = () => {
+    const action = document.fullscreenElement
+      ? document.exitFullscreen()
+      : document.documentElement.requestFullscreen();
+    void action.catch(() => undefined);
+  };
+
   return (
     <div className="relative h-screen overflow-hidden">
       <header className="grid h-16 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 bg-[#001b47] px-3 text-white shadow-sm sm:gap-4 sm:px-6">
         <div className="rounded-md bg-white px-2 py-2 text-[10px] font-black text-[#07579a] shadow-sm sm:px-3 sm:text-xs">PACE<span className="text-[#2493dd]">LINGO</span></div>
         <h1 className="truncate text-center text-xs font-bold sm:text-lg">{title}</h1>
         <div className="flex items-center gap-2 text-xs font-bold tabular-nums">
+          <button
+            type="button"
+            onClick={toggleFullscreen}
+            aria-label={fullscreen ? "Thoát toàn màn hình" : "Mở toàn màn hình"}
+            title={fullscreen ? "Thoát toàn màn hình" : "Toàn màn hình"}
+            className="hidden size-9 place-items-center rounded-md bg-white/10 text-white transition hover:bg-white/20 sm:grid"
+          >
+            <FullscreenIcon active={fullscreen} />
+          </button>
           <span className="hidden min-w-[68px] rounded-md bg-white px-3 py-2 text-center text-[#07579a] shadow-sm sm:inline-block">
             {progress}
           </span>
@@ -1243,12 +1413,28 @@ function ClockIcon() {
   );
 }
 
-function NavButton({ disabled, onClick, children }: { disabled: boolean; onClick: () => void; children: React.ReactNode }) {
-  return <button disabled={disabled} onClick={onClick} className="grid h-14 w-14 place-items-center bg-[#1677c8] text-xl font-bold text-white transition-colors hover:bg-[#0b5fa5] disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-100">{children}</button>;
+function FullscreenIcon({ active }: { active: boolean }) {
+  return active ? (
+    <svg viewBox="0 0 24 24" className="size-4" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 4v5H4m11-5v5h5M9 20v-5H4m11 5v-5h5" strokeLinecap="round" strokeLinejoin="round" /></svg>
+  ) : (
+    <svg viewBox="0 0 24 24" className="size-4" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 4H4v5m11-5h5v5M9 20H4v-5m11 5h5v-5" strokeLinecap="round" strokeLinejoin="round" /></svg>
+  );
 }
 
-function Stat({ value, label }: { value: string; label: string }) {
-  return <div className="rounded-xl bg-slate-50 p-4"><strong className="text-xl text-[#07579a]">{value}</strong><p className="mt-1 text-xs text-slate-500">{label}</p></div>;
+function HeadphoneIcon() {
+  return <svg viewBox="0 0 24 24" className="size-6" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M4 14v-2a8 8 0 0 1 16 0v2" /><path d="M6 13H4a2 2 0 0 0-2 2v3a2 2 0 0 0 2 2h2zm12 0h2a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2h-2z" /></svg>;
+}
+
+function StartMetric({ value, label }: { value: string; label: string }) {
+  return <div className="rounded-xl border border-blue-100 bg-blue-50/60 p-3 text-center"><strong className="block text-xl font-black text-[#0b4f8a]">{value}</strong><span className="mt-1 block text-[11px] font-semibold text-slate-500">{label}</span></div>;
+}
+
+function InstructionItem({ children }: { children: React.ReactNode }) {
+  return <li className="flex gap-2.5"><span className="mt-1 grid size-4 shrink-0 place-items-center rounded-full bg-blue-100 text-[10px] font-black text-[#0b5fa5]">✓</span><span>{children}</span></li>;
+}
+
+function NavButton({ disabled, onClick, children }: { disabled: boolean; onClick: () => void; children: React.ReactNode }) {
+  return <button disabled={disabled} onClick={onClick} className="grid h-14 w-14 place-items-center bg-[#1677c8] text-xl font-bold text-white transition-colors hover:bg-[#0b5fa5] disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-100">{children}</button>;
 }
 
 function ExamMessage({ title, detail }: { title: string; detail?: string }) {
@@ -1268,6 +1454,26 @@ function countQuestions(payload: CandidatePayload) {
         0,
       ),
     0,
+  );
+}
+
+function answerShortcutIndex(key: string) {
+  const normalized = key.toLowerCase();
+  const index = ["a", "b", "c", "d"].indexOf(normalized);
+  if (index >= 0) return index;
+  const number = Number(normalized);
+  return Number.isInteger(number) && number >= 1 && number <= 4
+    ? number - 1
+    : null;
+}
+
+function isShortcutBlocked(event: KeyboardEvent) {
+  if (event.altKey || event.ctrlKey || event.metaKey) return true;
+  const target = event.target;
+  if (!(target instanceof HTMLElement)) return false;
+  return Boolean(
+    target.isContentEditable ||
+      target.closest("input, textarea, select, button, a, [contenteditable='true']"),
   );
 }
 
