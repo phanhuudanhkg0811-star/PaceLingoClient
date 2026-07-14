@@ -69,3 +69,29 @@ input,
 select {
   outline-color: var(--accent);
 }
+
+.exam-scrollbar {
+  scrollbar-width: thin;
+  scrollbar-color: rgb(100 116 139 / 35%) transparent;
+}
+
+.exam-scrollbar::-webkit-scrollbar {
+  width: 9px;
+  height: 9px;
+}
+
+.exam-scrollbar::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.exam-scrollbar::-webkit-scrollbar-thumb {
+  background: rgb(100 116 139 / 32%);
+  background-clip: padding-box;
+  border: 2px solid transparent;
+  border-radius: 999px;
+}
+
+.exam-scrollbar::-webkit-scrollbar-thumb:hover {
+  background: rgb(71 85 105 / 52%);
+  background-clip: padding-box;
+}

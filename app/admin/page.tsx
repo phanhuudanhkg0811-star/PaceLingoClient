@@ -21,6 +21,20 @@ export default function AdminPage() {
 
           <div className="mt-10 grid gap-5 md:grid-cols-2 xl:grid-cols-3">
             <Link
+              href="/admin/tests"
+              className="group rounded-3xl border border-border bg-surface p-7 shadow-[0_18px_50px_rgba(var(--shadow),0.08)] transition hover:-translate-y-1 hover:border-accent/50"
+            >
+              <span className="grid size-12 place-items-center rounded-2xl bg-accent-soft text-2xl text-accent-strong">
+                ✎
+              </span>
+              <h2 className="mt-6 text-xl font-bold group-hover:text-accent">
+                Test Editor
+              </h2>
+              <p className="mt-2 leading-7 text-muted">
+                Preview, sửa câu hỏi, gắn media, căn timeline và publish đề.
+              </p>
+            </Link>
+            <Link
               href="/admin/media"
               className="group rounded-3xl border border-border bg-surface p-7 shadow-[0_18px_50px_rgba(var(--shadow),0.08)] transition hover:-translate-y-1 hover:border-accent/50"
             >
