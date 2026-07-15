@@ -10,9 +10,21 @@ import { AuthProvider } from "@/components/auth-provider";
 import { ThemeProvider } from "@/components/theme-provider";
 
 export const metadata: Metadata = {
+  metadataBase: new URL(
+    process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000",
+  ),
   title: "PaceLingo — Luyện thi TOEIC như thi thật",
   description:
     "Mô phỏng bài thi TOEIC, luyện Listening và Reading trong trải nghiệm sát phòng thi thật.",
+  applicationName: "PaceLingo",
+  robots: { index: true, follow: true },
+  openGraph: {
+    type: "website",
+    locale: "vi_VN",
+    siteName: "PaceLingo",
+    title: "PaceLingo — Luyện thi TOEIC như thi thật",
+    description: "Luyện TOEIC Listening và Reading trong trải nghiệm mô phỏng phòng thi.",
+  },
 };
 
 export default function RootLayout({

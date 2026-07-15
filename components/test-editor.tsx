@@ -1595,9 +1595,7 @@ function CandidatePreview({
   const [mobile, setMobile] = useState(false);
   const pages = useMemo(
     () =>
-      test.sections
-        .filter((section) => section.kind === "READING")
-        .flatMap((section) =>
+      test.sections.flatMap((section) =>
         section.questionGroups.flatMap((group) =>
           section.part === "PART_5"
             ? group.questions.map((question) => ({
@@ -1615,7 +1613,7 @@ function CandidatePreview({
                 },
               ],
         ),
-        ),
+      ),
     [test],
   );
   const initialPage =
@@ -1638,14 +1636,27 @@ function CandidatePreview({
   const activeQuestion =
     visibleQuestions.find((question) => question.id === activeQuestionId) ??
     visibleQuestions[0];
-  const questionRange = visibleQuestions.length
-    ? `${visibleQuestions[0].number}–${visibleQuestions.at(-1)?.number}`
-    : "chưa có câu hỏi";
-  const answeredCount = Object.keys(answers).length;
-  const readingQuestionCount = pages.reduce(
-    (total, currentPage) => total + currentPage.questions.length,
-    0,
-  );
+  const questionRange =
+    visibleQuestions.length === 1
+      ? String(visibleQuestions[0].number)
+      : visibleQuestions.length > 1
+        ? `${visibleQuestions[0].number}–${visibleQuestions.at(-1)?.number}`
+        : "chưa có câu hỏi";
+  const sectionKindQuestions = test.sections
+    .filter((item) => item.kind === section?.kind)
+    .flatMap((item) => item.questionGroups)
+    .flatMap((item) => item.questions);
+  const answeredCount = sectionKindQuestions.filter(
+    (item) => answers[item.id],
+  ).length;
+  const sectionKindQuestionCount = sectionKindQuestions.length;
+  const readingQuestionCount = test.sections
+    .filter((item) => item.kind === "READING")
+    .flatMap((item) => item.questionGroups)
+    .reduce((total, item) => total + item.questions.length, 0);
+  const listening = section?.kind === "LISTENING";
+  const labelOnlyListening =
+    listening && (section?.part === "PART_1" || section?.part === "PART_2");
   const directionText =
     section?.directionTemplate?.directionText ??
     (section?.part === "PART_5"
@@ -1698,16 +1709,18 @@ function CandidatePreview({
               className="ml-2 rounded-lg border border-border bg-surface px-3 py-2 text-xs normal-case text-foreground"
             >
               {test.sections
-                .filter((item) => item.kind === "READING")
+                .filter((item) =>
+                  pages.some((candidate) => candidate.section.id === item.id),
+                )
                 .map((item) => (
-                <option key={item.id} value={item.id}>
-                  {item.part?.replace("PART_", "Part ") ?? item.title}
-                </option>
+                  <option key={item.id} value={item.id}>
+                    {item.part?.replace("PART_", "Part ") ?? item.title}
+                  </option>
                 ))}
             </select>
           </label>
           <label className="text-[10px] font-bold uppercase tracking-wider text-muted">
-            Trang
+            {listening ? "Nhóm" : "Trang"}
             <select
               value={page?.key ?? ""}
               onChange={(event) => {
@@ -1721,31 +1734,38 @@ function CandidatePreview({
               {pages
                 .filter((item) => item.section.id === section?.id)
                 .map((item, index) => (
-                <option key={item.key} value={item.key}>
-                  Trang {index + 1} · Câu {item.questions[0]?.number ?? "—"}
-                  {item.questions.length > 1
-                    ? `–${item.questions.at(-1)?.number ?? "—"}`
-                    : ""}
-                </option>
+                  <option key={item.key} value={item.key}>
+                    Trang {index + 1} · Câu {item.questions[0]?.number ?? "—"}
+                    {item.questions.length > 1
+                      ? `–${item.questions.at(-1)?.number ?? "—"}`
+                      : ""}
+                  </option>
                 ))}
             </select>
           </label>
           <div className="flex rounded-xl border border-border bg-surface p-1 text-xs font-bold">
-          <button
-            onClick={() => setMobile(false)}
-            className={`rounded-lg px-3 py-2 ${!mobile ? "bg-accent text-white dark:text-slate-950" : ""}`}
-          >
-            Desktop
-          </button>
-          <button
-            onClick={() => setMobile(true)}
-            className={`rounded-lg px-3 py-2 ${mobile ? "bg-accent text-white dark:text-slate-950" : ""}`}
-          >
-            Mobile
-          </button>
+            <button
+              onClick={() => setMobile(false)}
+              className={`rounded-lg px-3 py-2 ${!mobile ? "bg-accent text-white dark:text-slate-950" : ""}`}
+            >
+              Desktop
+            </button>
+            <button
+              onClick={() => setMobile(true)}
+              className={`rounded-lg px-3 py-2 ${mobile ? "bg-accent text-white dark:text-slate-950" : ""}`}
+            >
+              Mobile
+            </button>
           </div>
         </div>
       </div>
+      {listening && group && (
+        <ListeningPreviewInspector
+          test={test}
+          group={group}
+          part={section?.part ?? null}
+        />
+      )}
       <div
         className={`relative mx-auto overflow-hidden rounded-3xl border border-slate-300 bg-white text-slate-900 shadow-2xl transition-all ${mobile ? "max-w-[390px]" : "max-w-6xl"}`}
       >
@@ -1754,11 +1774,12 @@ function CandidatePreview({
             PACE<span className="text-[#f28b26]">LINGO</span>
           </div>
           <strong className="truncate text-center text-sm sm:text-lg">
-            Reading: Question {activeQuestion?.number ?? "—"} of {test.totalQuestions}
+            {listening ? "Listening" : "Reading"}: Question {questionRange} of{" "}
+            {test.totalQuestions}
           </strong>
           <div className="flex items-center gap-2 text-[10px] font-bold sm:text-xs">
             <span className="hidden rounded-md bg-white px-3 py-2 text-[#18477e] sm:inline">
-              {answeredCount}/{readingQuestionCount}
+              {answeredCount}/{sectionKindQuestionCount}
             </span>
             <span className="rounded-md bg-[#2f86d5] px-3 py-2 font-mono">
               ◷ {examHours}:{examMinutes}:00
@@ -1777,140 +1798,168 @@ function CandidatePreview({
         {group ? (
           <div>
             <div className="border-b border-slate-200 bg-slate-50 px-5 py-2 text-xs font-bold text-slate-500">
-              {section?.part?.replace("PART_", "Part ") ?? section?.title} · Câu {questionRange}
+              {section?.part?.replace("PART_", "Part ") ?? section?.title} · Câu{" "}
+              {questionRange}
             </div>
             <div
               className={`grid gap-4 bg-[#f3f3f3] p-4 ${mobile ? "min-h-[600px]" : "h-[calc(100vh-270px)] min-h-[560px] max-h-[780px] md:grid-cols-2"}`}
             >
-            <div
-              className={`exam-scrollbar min-w-0 border border-slate-300 bg-white p-5 ${mobile ? "" : "overflow-y-auto overscroll-contain"}`}
-            >
-              <div className="sticky -top-5 z-10 -mx-5 -mt-5 mb-4 border-b border-slate-200 bg-white/95 px-5 py-3 text-xs font-bold uppercase tracking-wider text-slate-500 backdrop-blur">
-                {section?.part === "PART_5" ? "Directions" : "Passage"}
-              </div>
-              {section?.part === "PART_5" ? (
-                <p className="text-base font-semibold leading-7 text-[#124b78]">
-                  {directionText}
-                </p>
-              ) : group.stimuli.length ? (
-                group.stimuli.map((item, index) => (
-                  <div key={item.id} className="mb-4">
-                    {group.stimuli.length > 1 && (
-                      <h3 className="mb-5 mt-8 text-lg font-semibold text-[#124b78] first:mt-0">
-                        Passage {index + 1}
-                      </h3>
-                    )}
-                    <StimulusPreview stimulus={item} />
-                  </div>
-                ))
-              ) : (
-                <div className="rounded-xl border border-dashed border-amber-300 bg-amber-50 p-4 text-sm text-amber-800">
-                  <strong>Group này chưa có passage.</strong>
-                  <p className="mt-1 text-xs leading-5">
-                    Vào tab Content → Stimuli / Passage để thêm HTML hoặc ảnh.
-                    Nếu vừa import, kiểm tra JSON có trường <code>stimuli</code>.
-                  </p>
+              <div
+                className={`exam-scrollbar min-w-0 border border-slate-300 bg-white p-5 ${mobile ? "" : "overflow-y-auto overscroll-contain"}`}
+              >
+                <div className="sticky -top-5 z-10 -mx-5 -mt-5 mb-4 border-b border-slate-200 bg-white/95 px-5 py-3 text-xs font-bold uppercase tracking-wider text-slate-500 backdrop-blur">
+                  {listening
+                    ? section?.part === "PART_1"
+                      ? "Photo"
+                      : "Listening"
+                    : section?.part === "PART_5"
+                      ? "Directions"
+                      : "Passage"}
                 </div>
-              )}
-            </div>
-            <div
-              className={`exam-scrollbar border border-slate-300 bg-white p-5 ${mobile ? "" : "overflow-y-auto overscroll-contain"}`}
-            >
-              <div className="sticky -top-5 z-10 -mx-5 -mt-5 mb-4 border-b border-slate-200 bg-white/95 px-5 py-3 text-xs font-bold uppercase tracking-wider text-slate-500 backdrop-blur">
-                Question
+                {listening ? (
+                  <ListeningStimuliPreview section={section} group={group} />
+                ) : section?.part === "PART_5" ? (
+                  <p className="text-base font-semibold leading-7 text-[#124b78]">
+                    {directionText}
+                  </p>
+                ) : group.stimuli.length ? (
+                  group.stimuli.map((item, index) => (
+                    <div key={item.id} className="mb-4">
+                      {group.stimuli.length > 1 && (
+                        <h3 className="mb-5 mt-8 text-lg font-semibold text-[#124b78] first:mt-0">
+                          Passage {index + 1}
+                        </h3>
+                      )}
+                      <StimulusPreview stimulus={item} />
+                    </div>
+                  ))
+                ) : (
+                  <div className="rounded-xl border border-dashed border-amber-300 bg-amber-50 p-4 text-sm text-amber-800">
+                    <strong>Group này chưa có passage.</strong>
+                    <p className="mt-1 text-xs leading-5">
+                      Vào tab Content → Stimuli / Passage để thêm HTML hoặc ảnh.
+                      Nếu vừa import, kiểm tra JSON có trường{" "}
+                      <code>stimuli</code>.
+                    </p>
+                  </div>
+                )}
               </div>
-              {visibleQuestions.map((question) => (
-                <article
-                  key={question.id}
-                  onClick={() => setActiveQuestionId(question.id)}
-                  className="mb-7 rounded-xl border border-transparent p-3"
-                >
-                  <div className="flex gap-3">
-                    <strong>{question.number}.</strong>
-                    <div className="min-w-0 flex-1">
-                      <HtmlFrame html={question.promptHtml} />
-                      <div className="mt-3 space-y-2">
-                        {question.options.map((option) => (
-                          <label
-                            key={option.id}
-                            className={`flex cursor-pointer items-center gap-3 rounded-sm border px-4 py-3 transition ${answers[question.id] === option.id ? "border-[#2b69a9] bg-blue-50" : "border-slate-200 bg-white hover:border-slate-400"}`}
-                          >
-                            <input
-                              type="radio"
-                              name={question.id}
-                              checked={answers[question.id] === option.id}
-                              className="size-4 accent-[#245f9f]"
-                              onChange={() => {
-                                setAnswers((current) => ({
-                                  ...current,
-                                  [question.id]: option.id,
-                                }));
-                                setActiveQuestionId(question.id);
-                              }}
-                            />
-                            <span>
-                              <strong>({option.label})</strong>{" "}
-                              <HtmlInline html={option.contentHtml} />
-                            </span>
-                          </label>
-                        ))}
+              <div
+                className={`exam-scrollbar border border-slate-300 bg-white p-5 ${mobile ? "" : "overflow-y-auto overscroll-contain"}`}
+              >
+                <div className="sticky -top-5 z-10 -mx-5 -mt-5 mb-4 border-b border-slate-200 bg-white/95 px-5 py-3 text-xs font-bold uppercase tracking-wider text-slate-500 backdrop-blur">
+                  {listening ? "Answer" : "Question"}
+                </div>
+                {visibleQuestions.map((question) => (
+                  <article
+                    key={question.id}
+                    onClick={() => setActiveQuestionId(question.id)}
+                    className="mb-7 rounded-xl border border-transparent p-3"
+                  >
+                    <div className="flex gap-3">
+                      <strong>{question.number}.</strong>
+                      <div className="min-w-0 flex-1">
+                        {labelOnlyListening ? (
+                          <p className="text-base">
+                            Question {question.number}
+                          </p>
+                        ) : (
+                          <HtmlFrame html={question.promptHtml} />
+                        )}
+                        <div className="mt-3 space-y-2">
+                          {question.options.map((option) => (
+                            <label
+                              key={option.id}
+                              className={`flex cursor-pointer items-center gap-3 rounded-sm border px-4 py-3 transition ${answers[question.id] === option.id ? "border-[#2b69a9] bg-blue-50" : "border-slate-200 bg-white hover:border-slate-400"}`}
+                            >
+                              <input
+                                type="radio"
+                                name={question.id}
+                                checked={answers[question.id] === option.id}
+                                className="size-4 accent-[#245f9f]"
+                                onChange={() => {
+                                  setAnswers((current) => ({
+                                    ...current,
+                                    [question.id]: option.id,
+                                  }));
+                                  setActiveQuestionId(question.id);
+                                }}
+                              />
+                              <span>
+                                <strong>({option.label})</strong>
+                                {!labelOnlyListening && (
+                                  <>
+                                    {" "}
+                                    <HtmlInline html={option.contentHtml} />
+                                  </>
+                                )}
+                              </span>
+                            </label>
+                          ))}
+                        </div>
                       </div>
                     </div>
-                  </div>
-                </article>
-              ))}
-            </div>
-            </div>
-            {section?.kind === "READING" && (
-            <div className="grid grid-cols-[1fr_auto_auto] items-center border-t border-slate-300 bg-[#f4f4f4] pl-4">
-              <button
-                type="button"
-                disabled={!activeQuestion}
-                onClick={toggleFlag}
-                className="flex items-center gap-2 justify-self-start py-3 text-xs font-medium text-slate-700"
-              >
-                <span
-                  className={`grid size-5 place-items-center rounded border ${activeQuestion && flaggedQuestionIds.includes(activeQuestion.id) ? "border-[#1677c8] bg-[#1677c8] text-white" : "border-slate-400 bg-white"}`}
-                >
-                  {activeQuestion && flaggedQuestionIds.includes(activeQuestion.id) ? "✓" : ""}
-                </span>
-                <span className={mobile ? "sr-only" : ""}>Mark item for review</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setCatalogOpen(true)}
-                className="grid h-12 w-12 place-items-center bg-[#07579a] text-lg font-bold text-white"
-                aria-label="Mở danh mục câu hỏi"
-              >
-                ☷
-              </button>
-              <div className="flex justify-self-end">
-                <button
-                  type="button"
-                  disabled={pageIndex === 0}
-                  onClick={() => goToPage(pageIndex - 1)}
-                  className="grid h-12 w-12 place-items-center bg-[#1677c8] text-lg font-bold text-white transition hover:bg-[#0b5fa5] disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-100"
-                  aria-label="Trang trước"
-                >
-                  ←
-                </button>
-                <button
-                  type="button"
-                  disabled={pageIndex >= pages.length - 1}
-                  onClick={() => goToPage(pageIndex + 1)}
-                  className="grid h-12 min-w-12 place-items-center bg-[#1677c8] px-3 text-lg font-bold text-white transition hover:bg-[#0b5fa5] disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-100"
-                >
-                  →
-                </button>
+                  </article>
+                ))}
               </div>
             </div>
+            {section?.kind === "READING" && (
+              <div className="grid grid-cols-[1fr_auto_auto] items-center border-t border-slate-300 bg-[#f4f4f4] pl-4">
+                <button
+                  type="button"
+                  disabled={!activeQuestion}
+                  onClick={toggleFlag}
+                  className="flex items-center gap-2 justify-self-start py-3 text-xs font-medium text-slate-700"
+                >
+                  <span
+                    className={`grid size-5 place-items-center rounded border ${activeQuestion && flaggedQuestionIds.includes(activeQuestion.id) ? "border-[#1677c8] bg-[#1677c8] text-white" : "border-slate-400 bg-white"}`}
+                  >
+                    {activeQuestion &&
+                    flaggedQuestionIds.includes(activeQuestion.id)
+                      ? "✓"
+                      : ""}
+                  </span>
+                  <span className={mobile ? "sr-only" : ""}>
+                    Mark item for review
+                  </span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setCatalogOpen(true)}
+                  className="grid h-12 w-12 place-items-center bg-[#07579a] text-lg font-bold text-white"
+                  aria-label="Mở danh mục câu hỏi"
+                >
+                  ☷
+                </button>
+                <div className="flex justify-self-end">
+                  <button
+                    type="button"
+                    disabled={pageIndex === 0}
+                    onClick={() => goToPage(pageIndex - 1)}
+                    className="grid h-12 w-12 place-items-center bg-[#1677c8] text-lg font-bold text-white transition hover:bg-[#0b5fa5] disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-100"
+                    aria-label="Trang trước"
+                  >
+                    ←
+                  </button>
+                  <button
+                    type="button"
+                    disabled={pageIndex >= pages.length - 1}
+                    onClick={() => goToPage(pageIndex + 1)}
+                    className="grid h-12 min-w-12 place-items-center bg-[#1677c8] px-3 text-lg font-bold text-white transition hover:bg-[#0b5fa5] disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-100"
+                  >
+                    →
+                  </button>
+                </div>
+              </div>
             )}
             {section?.kind === "READING" && catalogOpen && (
               <div className="absolute inset-0 z-30 flex items-center justify-center bg-slate-950/55 p-2 backdrop-blur-[2px] sm:p-4">
                 <section className="max-h-[88%] w-full max-w-xl overflow-y-auto rounded-md bg-white p-4 shadow-2xl sm:p-6">
                   <div className="sticky -top-4 z-10 -mx-4 -mt-4 mb-4 flex items-center justify-between border-b border-slate-200 bg-white px-4 py-4 sm:-top-6 sm:-mx-6 sm:-mt-6 sm:px-6">
                     <div>
-                      <h3 className="text-lg font-bold text-[#0d4f8d]">Reading</h3>
+                      <h3 className="text-lg font-bold text-[#0d4f8d]">
+                        Reading
+                      </h3>
                       <p className="text-xs text-slate-500">
                         {readingQuestionCount - answeredCount > 0
                           ? `Bạn còn ${readingQuestionCount - answeredCount} câu chưa trả lời.`
@@ -1927,9 +1976,18 @@ function CandidatePreview({
                     </button>
                   </div>
                   <div className="mb-5 flex flex-wrap gap-4 text-xs text-slate-600">
-                    <span><i className="mr-1 inline-block size-3 rounded bg-[#295ca8]" />Đã làm</span>
-                    <span><i className="mr-1 inline-block size-3 rounded border border-slate-300 bg-white" />Chưa làm</span>
-                    <span><i className="mr-1 inline-block size-3 rounded border-2 border-[#1677c8] bg-blue-50" />Đã flag</span>
+                    <span>
+                      <i className="mr-1 inline-block size-3 rounded bg-[#295ca8]" />
+                      Đã làm
+                    </span>
+                    <span>
+                      <i className="mr-1 inline-block size-3 rounded border border-slate-300 bg-white" />
+                      Chưa làm
+                    </span>
+                    <span>
+                      <i className="mr-1 inline-block size-3 rounded border-2 border-[#1677c8] bg-blue-50" />
+                      Đã flag
+                    </span>
                   </div>
                   <div className="space-y-5">
                     {test.sections
@@ -1964,7 +2022,9 @@ function CandidatePreview({
                                   >
                                     {question.number}
                                     {flagged && (
-                                      <span className="absolute -right-1 -top-1 text-[10px] text-[#1677c8]">⚑</span>
+                                      <span className="absolute -right-1 -top-1 text-[10px] text-[#1677c8]">
+                                        ⚑
+                                      </span>
                                     )}
                                   </button>
                                 );
@@ -2117,6 +2177,175 @@ function IssueList({
     </div>
   );
 }
+
+function ListeningPreviewInspector({
+  test,
+  group,
+  part,
+}: {
+  test: TestTree;
+  group: QuestionGroup;
+  part: TestTree["sections"][number]["part"];
+}) {
+  const groupAudio = group.stimuli.filter(
+    (item) => item.type === "AUDIO" && item.mediaAsset,
+  );
+  const visualCount = group.stimuli.filter(
+    (item) => item.type === "IMAGE" || item.type === "HTML",
+  ).length;
+
+  return (
+    <section className="mb-5 rounded-2xl border border-blue-200 bg-blue-50/70 p-4 text-slate-800 dark:border-blue-900 dark:bg-blue-950/30 dark:text-slate-100">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="text-xs font-black uppercase tracking-widest text-[#07579a] dark:text-blue-300">
+            Kiểm tra Listening ·{" "}
+            {part?.replace("PART_", "Part ") ?? "Listening"}
+          </p>
+          <p className="mt-1 text-xs leading-5 text-slate-600 dark:text-slate-300">
+            Player bên dưới chỉ dành cho admin kiểm tra; badge cho biết group đã
+            có transcript hay chưa. Khi thi thật, thí sinh chỉ nghe full audio
+            và không thấy transcript hay nút điều khiển.
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2 text-[11px] font-bold">
+          <span
+            className={`rounded-full px-3 py-1 ${test.fullListeningAudio ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}`}
+          >
+            {test.fullListeningAudio ? "Đã gắn full audio" : "Thiếu full audio"}
+          </span>
+          <span
+            className={`rounded-full px-3 py-1 ${group.transcriptHtml ? "bg-emerald-100 text-emerald-700" : "bg-slate-200 text-slate-600"}`}
+          >
+            {group.transcriptHtml ? "Có transcript" : "Chưa có transcript"}
+          </span>
+          <span className="rounded-full bg-blue-100 px-3 py-1 text-blue-700">
+            {visualCount} nội dung nhìn thấy
+          </span>
+        </div>
+      </div>
+      <div className="mt-4 grid gap-3 lg:grid-cols-2">
+        <AudioCheck
+          label="Full Listening audio"
+          asset={test.fullListeningAudio}
+          empty="Chưa gắn full audio cho đề."
+        />
+        {groupAudio.length ? (
+          <div className="space-y-2 rounded-xl border border-blue-100 bg-white/80 p-3 dark:border-blue-900 dark:bg-slate-950/40">
+            <p className="text-[11px] font-black uppercase tracking-wider text-slate-500">
+              Audio riêng của nhóm
+            </p>
+            {groupAudio.map((item) => (
+              <audio
+                key={item.id}
+                controls
+                preload="metadata"
+                src={item.mediaAsset?.url}
+                className="h-9 w-full"
+              />
+            ))}
+          </div>
+        ) : (
+          <div className="rounded-xl border border-dashed border-slate-300 bg-white/60 p-3 text-xs text-slate-500 dark:bg-slate-950/30">
+            Nhóm này không có audio riêng; candidate runtime sẽ dùng full audio
+            và timeline.
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
+function AudioCheck({
+  label,
+  asset,
+  empty,
+}: {
+  label: string;
+  asset: MediaAsset | null;
+  empty: string;
+}) {
+  return (
+    <div className="rounded-xl border border-blue-100 bg-white/80 p-3 dark:border-blue-900 dark:bg-slate-950/40">
+      <div className="mb-2 flex items-center justify-between gap-3">
+        <p className="text-[11px] font-black uppercase tracking-wider text-slate-500">
+          {label}
+        </p>
+        {asset?.durationMs && (
+          <span className="text-[11px] font-bold text-slate-500">
+            {formatMs(asset.durationMs)}
+          </span>
+        )}
+      </div>
+      {asset ? (
+        <>
+          <p
+            className="mb-2 truncate text-xs font-semibold"
+            title={asset.originalName}
+          >
+            {asset.originalName}
+          </p>
+          <audio
+            controls
+            preload="metadata"
+            src={asset.url}
+            className="h-9 w-full"
+          />
+        </>
+      ) : (
+        <p className="text-xs text-amber-700">{empty}</p>
+      )}
+    </div>
+  );
+}
+
+function ListeningStimuliPreview({
+  section,
+  group,
+}: {
+  section: TestTree["sections"][number] | undefined;
+  group: QuestionGroup;
+}) {
+  const visibleStimuli = group.stimuli.filter((item) => item.type !== "AUDIO");
+  const instruction =
+    section?.part === "PART_1"
+      ? "Select the one statement that best describes what you see in the picture."
+      : section?.part === "PART_2"
+        ? "Select the best response to the question."
+        : "Listen and select the best answer.";
+
+  return (
+    <div>
+      <p className="mb-5 text-base font-semibold leading-7 text-[#124b78]">
+        {instruction}
+      </p>
+      {visibleStimuli.length ? (
+        <div className="space-y-4">
+          {visibleStimuli.map((item) => (
+            <StimulusPreview key={item.id} stimulus={item} />
+          ))}
+        </div>
+      ) : section?.part === "PART_1" ? (
+        <div className="grid min-h-72 place-items-center rounded-xl border-2 border-dashed border-amber-300 bg-amber-50 p-6 text-center text-amber-800">
+          <div>
+            <p className="text-lg font-black">Part 1 chưa có ảnh</p>
+            <p className="mt-2 max-w-sm text-sm leading-6">
+              Gắn IMAGE stimulus vào group này trước khi publish để thí sinh
+              nhìn thấy photograph.
+            </p>
+          </div>
+        </div>
+      ) : section?.part === "PART_2" ? (
+        <div className="min-h-72" aria-hidden="true" />
+      ) : (
+        <div className="grid min-h-72 place-items-center rounded-xl bg-slate-50 p-6 text-center text-slate-500">
+          Listen to the audio and select the best answer.
+        </div>
+      )}
+    </div>
+  );
+}
+
 function StimulusPreview({ stimulus }: { stimulus: Stimulus }) {
   if (stimulus.type === "HTML")
     return <HtmlFrame html={stimulus.contentHtml ?? ""} passage />;
@@ -2145,9 +2374,7 @@ function HtmlFrame({
   html: string;
   passage?: boolean;
 }) {
-  const plainLength = html
-    .replace(/<[^>]*>/g, " ")
-    .replace(/\s+/g, " ").length;
+  const plainLength = html.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").length;
   const blockCount = (
     html.match(/<(p|div|article|table|tr|li|header|section)\b/gi) ?? []
   ).length;

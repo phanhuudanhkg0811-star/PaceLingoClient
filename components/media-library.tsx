@@ -18,8 +18,15 @@ interface MediaAsset {
   height: number | null;
   durationMs: number | null;
   altText: string | null;
+  folder: { id: string; name: string } | null;
   createdAt: string;
   _count: Record<string, number>;
+}
+
+interface MediaFolder {
+  id: string;
+  name: string;
+  _count: { assets: number };
 }
 
 interface MediaListResponse {
@@ -40,6 +47,7 @@ interface UsageDetails {
 
 export function MediaLibrary() {
   const [items, setItems] = useState<MediaAsset[]>([]);
+  const [folders, setFolders] = useState<MediaFolder[]>([]);
   const [pagination, setPagination] = useState<MediaListResponse["pagination"]>({
     page: 1,
     pageSize: 20,
@@ -51,6 +59,7 @@ export function MediaLibrary() {
   const [searchInput, setSearchInput] = useState("");
   const [search, setSearch] = useState("");
   const [page, setPage] = useState(1);
+  const [selectedFolder, setSelectedFolder] = useState("all");
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -63,6 +72,7 @@ export function MediaLibrary() {
       const query = new URLSearchParams({ page: String(page), pageSize: "20" });
       if (type) query.set("type", type);
       if (search) query.set("search", search);
+      if (selectedFolder !== "all") query.set("folder", selectedFolder);
       const response = await apiFetch(`/admin/media?${query}`);
       if (!response.ok) throw new Error(await responseMessage(response));
       const payload = (await response.json()) as MediaListResponse;
@@ -74,11 +84,27 @@ export function MediaLibrary() {
     } finally {
       setLoading(false);
     }
-  }, [page, search, type]);
+  }, [page, search, selectedFolder, type]);
+
+  const loadFolders = useCallback(async () => {
+    try {
+      const response = await apiFetch("/admin/media/folders");
+      if (!response.ok) throw new Error(await responseMessage(response));
+      setFolders((await response.json()) as MediaFolder[]);
+    } catch (reason) {
+      setError(
+        reason instanceof Error ? reason.message : "Không thể tải thư mục",
+      );
+    }
+  }, []);
 
   useEffect(() => {
     queueMicrotask(() => void loadMedia());
   }, [loadMedia]);
+
+  useEffect(() => {
+    queueMicrotask(() => void loadFolders());
+  }, [loadFolders]);
 
   async function upload(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -95,7 +121,7 @@ export function MediaLibrary() {
       if (!response.ok) throw new Error(await responseMessage(response));
       form.reset();
       setPage(1);
-      await loadMedia();
+      await Promise.all([loadMedia(), loadFolders()]);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Upload thất bại");
     } finally {
@@ -109,7 +135,7 @@ export function MediaLibrary() {
     try {
       const response = await apiFetch(`/admin/media/${media.id}`, { method: "DELETE" });
       if (!response.ok) throw new Error(await responseMessage(response));
-      await loadMedia();
+      await Promise.all([loadMedia(), loadFolders()]);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Không thể xóa media");
     } finally {
@@ -129,6 +155,99 @@ export function MediaLibrary() {
       await loadMedia();
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Không thể lưu mô tả");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function moveToFolder(media: MediaAsset, folderId: string | null) {
+    setBusy(true);
+    setError(null);
+    try {
+      const response = await apiFetch(`/admin/media/${media.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ folderId }),
+      });
+      if (!response.ok) throw new Error(await responseMessage(response));
+      await Promise.all([loadMedia(), loadFolders()]);
+    } catch (reason) {
+      setError(
+        reason instanceof Error ? reason.message : "Không thể chuyển thư mục",
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function createFolder() {
+    const name = window.prompt("Tên thư mục mới:")?.trim();
+    if (!name) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const response = await apiFetch("/admin/media/folders", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name }),
+      });
+      if (!response.ok) throw new Error(await responseMessage(response));
+      const folder = (await response.json()) as MediaFolder;
+      await loadFolders();
+      setSelectedFolder(folder.id);
+      setPage(1);
+    } catch (reason) {
+      setError(
+        reason instanceof Error ? reason.message : "Không thể tạo thư mục",
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function renameFolder(folder: MediaFolder) {
+    const name = window.prompt("Đổi tên thư mục:", folder.name)?.trim();
+    if (!name || name === folder.name) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const response = await apiFetch(`/admin/media/folders/${folder.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name }),
+      });
+      if (!response.ok) throw new Error(await responseMessage(response));
+      await loadFolders();
+    } catch (reason) {
+      setError(
+        reason instanceof Error ? reason.message : "Không thể đổi tên thư mục",
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function removeFolder(folder: MediaFolder) {
+    if (
+      !window.confirm(
+        `Xóa thư mục “${folder.name}”? ${folder._count.assets} file bên trong sẽ chuyển về Chưa phân loại.`,
+      )
+    )
+      return;
+    setBusy(true);
+    setError(null);
+    try {
+      const response = await apiFetch(`/admin/media/folders/${folder.id}`, {
+        method: "DELETE",
+      });
+      if (!response.ok) throw new Error(await responseMessage(response));
+      if (selectedFolder === folder.id) setSelectedFolder("unfiled");
+      setPage(1);
+      await Promise.all([loadFolders(), loadMedia()]);
+    } catch (reason) {
+      setError(
+        reason instanceof Error ? reason.message : "Không thể xóa thư mục",
+      );
     } finally {
       setBusy(false);
     }
@@ -217,6 +336,26 @@ export function MediaLibrary() {
                 className="mt-2 w-full rounded-xl border border-border bg-background px-4 py-3 font-normal text-foreground placeholder:text-muted/70"
               />
             </label>
+            <label className="mt-4 block text-sm font-semibold">
+              Thư mục
+              <select
+                key={selectedFolder}
+                name="folderId"
+                defaultValue={
+                  selectedFolder !== "all" && selectedFolder !== "unfiled"
+                    ? selectedFolder
+                    : ""
+                }
+                className="mt-2 w-full rounded-xl border border-border bg-background px-4 py-3 font-normal text-foreground"
+              >
+                <option value="">Chưa phân loại</option>
+                {folders.map((folder) => (
+                  <option key={folder.id} value={folder.id}>
+                    {folder.name}
+                  </option>
+                ))}
+              </select>
+            </label>
             <button
               type="submit"
               disabled={busy || !storageConfigured}
@@ -227,6 +366,85 @@ export function MediaLibrary() {
           </form>
 
           <div>
+            <section className="mb-5 rounded-2xl border border-border bg-surface p-4 shadow-[0_10px_30px_rgba(var(--shadow),0.05)]">
+              <div className="flex items-center justify-between gap-4">
+                <div>
+                  <p className="text-xs font-bold uppercase tracking-[0.18em] text-accent">
+                    Thư mục
+                  </p>
+                  <p className="mt-1 text-sm text-muted">
+                    Gom media theo đề hoặc mục đích sử dụng.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() => void createFolder()}
+                  className="shrink-0 rounded-xl bg-accent px-4 py-2 text-sm font-bold text-white disabled:opacity-50 dark:text-slate-950"
+                >
+                  + Thư mục
+                </button>
+              </div>
+              <div className="mt-4 flex flex-wrap gap-2">
+                <FolderButton
+                  active={selectedFolder === "all"}
+                  label="Tất cả"
+                  onClick={() => {
+                    setSelectedFolder("all");
+                    setPage(1);
+                  }}
+                />
+                <FolderButton
+                  active={selectedFolder === "unfiled"}
+                  label="Chưa phân loại"
+                  onClick={() => {
+                    setSelectedFolder("unfiled");
+                    setPage(1);
+                  }}
+                />
+                {folders.map((folder) => (
+                  <FolderButton
+                    key={folder.id}
+                    active={selectedFolder === folder.id}
+                    label={`${folder.name} · ${folder._count.assets}`}
+                    onClick={() => {
+                      setSelectedFolder(folder.id);
+                      setPage(1);
+                    }}
+                  />
+                ))}
+              </div>
+              {selectedFolder !== "all" && selectedFolder !== "unfiled" && (
+                <div className="mt-3 flex justify-end gap-2 border-t border-border pt-3 text-xs font-semibold">
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => {
+                      const folder = folders.find(
+                        (item) => item.id === selectedFolder,
+                      );
+                      if (folder) void renameFolder(folder);
+                    }}
+                    className="rounded-lg border border-border px-3 py-2 hover:border-accent"
+                  >
+                    Đổi tên
+                  </button>
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => {
+                      const folder = folders.find(
+                        (item) => item.id === selectedFolder,
+                      );
+                      if (folder) void removeFolder(folder);
+                    }}
+                    className="rounded-lg px-3 py-2 text-danger hover:bg-danger-soft"
+                  >
+                    Xóa thư mục
+                  </button>
+                </div>
+              )}
+            </section>
             <form onSubmit={submitSearch} className="flex flex-col gap-3 sm:flex-row">
               <input
                 value={searchInput}
@@ -268,11 +486,13 @@ export function MediaLibrary() {
                   <MediaCard
                     key={media.id}
                     media={media}
+                    folders={folders}
                     busy={busy}
                     onDelete={() => void remove(media)}
                     onSaveAlt={(value) => void updateAltText(media, value)}
                     onReplace={(file) => void replace(media, file)}
                     onUsages={() => void showUsages(media)}
+                    onMove={(folderId) => void moveToFolder(media, folderId)}
                   />
                 ))}
               </div>
@@ -293,20 +513,49 @@ export function MediaLibrary() {
   );
 }
 
+function FolderButton({
+  active,
+  label,
+  onClick,
+}: {
+  active: boolean;
+  label: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`rounded-xl border px-3.5 py-2 text-sm font-semibold transition ${
+        active
+          ? "border-accent bg-accent text-white dark:text-slate-950"
+          : "border-border bg-background text-muted hover:border-accent/60 hover:text-foreground"
+      }`}
+    >
+      <span className="mr-1.5">▰</span>
+      {label}
+    </button>
+  );
+}
+
 function MediaCard({
   media,
+  folders,
   busy,
   onDelete,
   onSaveAlt,
   onReplace,
   onUsages,
+  onMove,
 }: {
   media: MediaAsset;
+  folders: MediaFolder[];
   busy: boolean;
   onDelete: () => void;
   onSaveAlt: (value: string) => void;
   onReplace: (file: File) => void;
   onUsages: () => void;
+  onMove: (folderId: string | null) => void;
 }) {
   const [altText, setAltText] = useState(media.altText ?? "");
   const usages = Object.values(media._count).reduce((total, count) => total + count, 0);
@@ -345,6 +594,22 @@ function MediaCard({
           placeholder="Thêm mô tả…"
           className="mt-4 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-foreground"
         />
+        <label className="mt-3 block text-xs font-semibold text-muted">
+          Thư mục
+          <select
+            value={media.folder?.id ?? ""}
+            disabled={busy}
+            onChange={(event) => onMove(event.target.value || null)}
+            className="mt-1.5 w-full rounded-lg border border-border bg-background px-3 py-2 text-sm font-normal text-foreground disabled:opacity-50"
+          >
+            <option value="">Chưa phân loại</option>
+            {folders.map((folder) => (
+              <option key={folder.id} value={folder.id}>
+                {folder.name}
+              </option>
+            ))}
+          </select>
+        </label>
         <div className="mt-4 flex flex-wrap gap-2 text-xs font-semibold">
           <button type="button" onClick={onUsages} className="rounded-lg border border-border px-3 py-2 hover:border-accent/50">Dùng ở {usages} nơi</button>
           <label className="cursor-pointer rounded-lg border border-border px-3 py-2 hover:border-accent/50">

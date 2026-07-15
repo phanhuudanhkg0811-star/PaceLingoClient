@@ -23,9 +23,13 @@ import type {
   CandidateSection,
   CandidateStimulus,
 } from "@/lib/candidate-types";
-import { deriveTimelineState, listeningDurationMs } from "@/lib/timeline-runtime";
+import {
+  deriveTimelineState,
+  listeningDurationMs,
+} from "@/lib/timeline-runtime";
 
-type Stage = "loading" | "ready" | "listening" | "reading" | "submitted" | "error";
+type Stage =
+  "loading" | "ready" | "listening" | "reading" | "submitted" | "error";
 
 export function CandidateExam({ testId }: { testId: string }) {
   const [stage, setStage] = useState<Stage>("loading");
@@ -40,7 +44,9 @@ export function CandidateExam({ testId }: { testId: string }) {
   const [audioTestPlaying, setAudioTestPlaying] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [cacheSource, setCacheSource] = useState<"network" | "cache" | null>(null);
+  const [cacheSource, setCacheSource] = useState<"network" | "cache" | null>(
+    null,
+  );
   const audioRef = useRef<HTMLAudioElement>(null);
   const highestPositionRef = useRef(0);
   const attemptRef = useRef<CandidateAttempt | null>(null);
@@ -48,7 +54,10 @@ export function CandidateExam({ testId }: { testId: string }) {
   const timingRecordsRef = useRef<Record<string, AttemptTiming>>({});
   const pendingAnswersRef = useRef<Record<string, AttemptAnswer>>({});
   const pendingTimingsRef = useRef<Record<string, AttemptTiming>>({});
-  const timingSessionRef = useRef<{ questionId: string; startedAt: number } | null>(null);
+  const timingSessionRef = useRef<{
+    questionId: string;
+    startedAt: number;
+  } | null>(null);
   const serverOffsetRef = useRef(0);
   const flushPromiseRef = useRef<Promise<void> | null>(null);
 
@@ -100,7 +109,9 @@ export function CandidateExam({ testId }: { testId: string }) {
         setStage("ready");
       } catch (reason) {
         if (cancelled) return;
-        setError(reason instanceof Error ? reason.message : "Không tải được đề");
+        setError(
+          reason instanceof Error ? reason.message : "Không tải được đề",
+        );
         setStage("error");
       }
     }
@@ -141,13 +152,19 @@ export function CandidateExam({ testId }: { testId: string }) {
       );
       const local = await readAttemptCache(nextAttempt.id);
       for (const item of Object.values(local?.answers ?? {})) {
-        if ((serverAnswers[item.questionId]?.clientSequence ?? -1) < item.clientSequence) {
+        if (
+          (serverAnswers[item.questionId]?.clientSequence ?? -1) <
+          item.clientSequence
+        ) {
           serverAnswers[item.questionId] = item;
           pendingAnswersRef.current[item.questionId] = item;
         }
       }
       for (const item of Object.values(local?.timings ?? {})) {
-        if ((serverTimings[item.questionId]?.clientSequence ?? -1) < item.clientSequence) {
+        if (
+          (serverTimings[item.questionId]?.clientSequence ?? -1) <
+          item.clientSequence
+        ) {
           serverTimings[item.questionId] = item;
           pendingTimingsRef.current[item.questionId] = item;
         }
@@ -199,7 +216,9 @@ export function CandidateExam({ testId }: { testId: string }) {
       setStage("listening");
       await audio.play();
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Không thể bắt đầu bài thi");
+      setError(
+        reason instanceof Error ? reason.message : "Không thể bắt đầu bài thi",
+      );
       setStage("ready");
     }
   }, [payload, testId]);
@@ -221,7 +240,8 @@ export function CandidateExam({ testId }: { testId: string }) {
     if (flushPromiseRef.current) return flushPromiseRef.current;
     const answersToSend = Object.values(pendingAnswersRef.current);
     const timingsToSend = Object.values(pendingTimingsRef.current);
-    if (!answersToSend.length && !timingsToSend.length) return Promise.resolve();
+    if (!answersToSend.length && !timingsToSend.length)
+      return Promise.resolve();
     const request = apiFetch(`/attempts/${current.id}/answers`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
@@ -234,12 +254,18 @@ export function CandidateExam({ testId }: { testId: string }) {
       .then(async (response) => {
         if (!response.ok) throw new Error(await responseMessage(response));
         for (const sent of answersToSend) {
-          if (pendingAnswersRef.current[sent.questionId]?.clientSequence === sent.clientSequence) {
+          if (
+            pendingAnswersRef.current[sent.questionId]?.clientSequence ===
+            sent.clientSequence
+          ) {
             delete pendingAnswersRef.current[sent.questionId];
           }
         }
         for (const sent of timingsToSend) {
-          if (pendingTimingsRef.current[sent.questionId]?.clientSequence === sent.clientSequence) {
+          if (
+            pendingTimingsRef.current[sent.questionId]?.clientSequence ===
+            sent.clientSequence
+          ) {
             delete pendingTimingsRef.current[sent.questionId];
           }
         }
@@ -320,26 +346,30 @@ export function CandidateExam({ testId }: { testId: string }) {
     persistLocal();
   }, [persistLocal]);
 
-  const startTiming = useCallback((questionId: string | null, countVisit = true) => {
-    if (!questionId || document.visibilityState !== "visible") return;
-    const previous = timingRecordsRef.current[questionId];
-    const now = new Date().toISOString();
-    const next: AttemptTiming = {
-      questionId,
-      activeTimeMs: previous?.activeTimeMs ?? 0,
-      visitCount: (previous?.visitCount ?? 0) + (countVisit ? 1 : 0),
-      firstViewedAt: previous?.firstViewedAt ?? now,
-      lastViewedAt: now,
-      clientSequence: (previous?.clientSequence ?? 0) + 1,
-    };
-    timingRecordsRef.current[questionId] = next;
-    pendingTimingsRef.current[questionId] = next;
-    timingSessionRef.current = { questionId, startedAt: performance.now() };
-  }, []);
+  const startTiming = useCallback(
+    (questionId: string | null, countVisit = true) => {
+      if (!questionId || document.visibilityState !== "visible") return;
+      const previous = timingRecordsRef.current[questionId];
+      const now = new Date().toISOString();
+      const next: AttemptTiming = {
+        questionId,
+        activeTimeMs: previous?.activeTimeMs ?? 0,
+        visitCount: (previous?.visitCount ?? 0) + (countVisit ? 1 : 0),
+        firstViewedAt: previous?.firstViewedAt ?? now,
+        lastViewedAt: now,
+        clientSequence: (previous?.clientSequence ?? 0) + 1,
+      };
+      timingRecordsRef.current[questionId] = next;
+      pendingTimingsRef.current[questionId] = next;
+      timingSessionRef.current = { questionId, startedAt: performance.now() };
+    },
+    [],
+  );
 
   useEffect(() => {
     stopTiming();
-    if (stage === "listening" || stage === "reading") startTiming(activeQuestionId);
+    if (stage === "listening" || stage === "reading")
+      startTiming(activeQuestionId);
     return stopTiming;
   }, [activeQuestionId, stage, startTiming, stopTiming]);
 
@@ -396,7 +426,10 @@ export function CandidateExam({ testId }: { testId: string }) {
       void apiFetch(`/attempts/${current.id}/progress`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ currentSection: section, currentQuestionId: questionId }),
+        body: JSON.stringify({
+          currentSection: section,
+          currentQuestionId: questionId,
+        }),
       }).catch(() => undefined);
     },
     [],
@@ -525,7 +558,9 @@ export function CandidateExam({ testId }: { testId: string }) {
           src={payload.test.fullListeningAudio.url}
           preload="auto"
           onEnded={() => {
-            if (payload.sections.some((section) => section.kind === "READING")) {
+            if (
+              payload.sections.some((section) => section.kind === "READING")
+            ) {
               setStage("reading");
               saveProgress("READING", null);
             } else {
@@ -604,34 +639,62 @@ function StartScreen({
   onAudioTest: () => void;
   onStart: () => void;
 }) {
-  const hasListening = payload.sections.some((section) => section.kind === "LISTENING");
+  const hasListening = payload.sections.some(
+    (section) => section.kind === "LISTENING",
+  );
   const questionCount = countQuestions(payload);
   return (
     <div className="min-h-screen bg-[radial-gradient(circle_at_top,#e6f2ff_0%,#f3f6fa_45%,#e7ebf0_100%)] p-4 sm:p-8">
       <section className="mx-auto w-full max-w-5xl overflow-hidden rounded-3xl border border-blue-100 bg-white shadow-2xl shadow-blue-950/15">
         <header className="bg-[#061b3a] px-6 py-7 text-white sm:px-9">
-          <p className="text-xs font-black uppercase tracking-[0.22em] text-sky-300">Before you begin</p>
-          <h1 className="mt-3 text-2xl font-black sm:text-3xl">{payload.test.title}</h1>
-          <p className="mt-2 text-sm text-blue-100/75">Hãy chuẩn bị không gian yên tĩnh và kiểm tra thiết bị trước khi bắt đầu.</p>
+          <p className="text-xs font-black uppercase tracking-[0.22em] text-sky-300">
+            Before you begin
+          </p>
+          <h1 className="mt-3 text-2xl font-black sm:text-3xl">
+            {payload.test.title}
+          </h1>
+          <p className="mt-2 text-sm text-blue-100/75">
+            Hãy chuẩn bị không gian yên tĩnh và kiểm tra thiết bị trước khi bắt
+            đầu.
+          </p>
         </header>
 
         <div className="grid gap-8 p-6 sm:p-9 lg:grid-cols-[1fr_0.82fr]">
           <div>
             <div className="grid grid-cols-3 gap-3">
               <StartMetric value={String(questionCount)} label="Câu hỏi" />
-              <StartMetric value={`${payload.test.durationMinutes}'`} label="Thời lượng" />
-              <StartMetric value={payload.test.type === "FULL_TEST" ? "Full" : "Mini"} label="Loại bài" />
+              <StartMetric
+                value={`${payload.test.durationMinutes}'`}
+                label="Thời lượng"
+              />
+              <StartMetric
+                value={payload.test.type === "FULL_TEST" ? "Full" : "Mini"}
+                label="Loại bài"
+              />
             </div>
-            <h2 className="mt-7 text-lg font-extrabold text-[#0b315e]">Hướng dẫn làm bài</h2>
+            <h2 className="mt-7 text-lg font-extrabold text-[#0b315e]">
+              Hướng dẫn làm bài
+            </h2>
             <ul className="mt-4 space-y-3 text-sm leading-6 text-slate-600">
-              <InstructionItem>Đáp án được lưu tự động; reload không làm mới thời gian.</InstructionItem>
-              {hasListening && <InstructionItem>Listening tự chạy theo audio và tự chuyển nội dung.</InstructionItem>}
-              <InstructionItem>Reading cho phép chuyển trang, xem danh mục và đánh dấu câu.</InstructionItem>
-              <InstructionItem>Hết thời gian, hệ thống sẽ tự động nộp bài.</InstructionItem>
+              <InstructionItem>
+                Đáp án được lưu tự động; reload không làm mới thời gian.
+              </InstructionItem>
+              {hasListening && (
+                <InstructionItem>
+                  Listening tự chạy theo audio và tự chuyển nội dung.
+                </InstructionItem>
+              )}
+              <InstructionItem>
+                Reading cho phép chuyển trang, xem danh mục và đánh dấu câu.
+              </InstructionItem>
+              <InstructionItem>
+                Hết thời gian, hệ thống sẽ tự động nộp bài.
+              </InstructionItem>
             </ul>
             {hasListening && (
               <div className="mt-6 rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-semibold leading-6 text-amber-800">
-                Listening trong chế độ thi thử không thể pause, tua hoặc nghe lại.
+                Listening trong chế độ thi thử không thể pause, tua hoặc nghe
+                lại.
               </div>
             )}
           </div>
@@ -642,8 +705,12 @@ function StartScreen({
                 <HeadphoneIcon />
               </span>
               <div>
-                <h2 className="font-extrabold text-[#0b315e]">Kiểm tra tai nghe</h2>
-                <p className="mt-1 text-xs leading-5 text-slate-500">Âm thanh sẽ di chuyển từ tai trái sang tai phải.</p>
+                <h2 className="font-extrabold text-[#0b315e]">
+                  Kiểm tra tai nghe
+                </h2>
+                <p className="mt-1 text-xs leading-5 text-slate-500">
+                  Âm thanh sẽ di chuyển từ tai trái sang tai phải.
+                </p>
               </div>
             </div>
             <button
@@ -652,13 +719,19 @@ function StartScreen({
               disabled={audioTestPlaying}
               className="mt-5 w-full rounded-xl border border-[#1677c8] bg-white px-4 py-3 text-sm font-extrabold text-[#0b5fa5] transition hover:bg-blue-50 disabled:cursor-wait disabled:opacity-60"
             >
-              {audioTestPlaying ? "Đang phát âm thanh…" : "▶ Phát âm thanh kiểm tra"}
+              {audioTestPlaying
+                ? "Đang phát âm thanh…"
+                : "▶ Phát âm thanh kiểm tra"}
             </button>
             <div className="mt-5 space-y-2 border-t border-blue-100 pt-5 text-xs text-slate-500">
               <p>✓ Candidate snapshot: {cached ? "đã cache" : "đã xác minh"}</p>
               <p>✓ Autosave và khôi phục lượt thi đã sẵn sàng</p>
             </div>
-            {error && <p className="mt-4 rounded-lg bg-red-50 p-3 text-xs text-red-700">{error}</p>}
+            {error && (
+              <p className="mt-4 rounded-lg bg-red-50 p-3 text-xs text-red-700">
+                {error}
+              </p>
+            )}
             <button
               onClick={onStart}
               disabled={audioTestPlaying}
@@ -666,7 +739,10 @@ function StartScreen({
             >
               Bắt đầu / tiếp tục bài thi
             </button>
-            <Link href="/tests" className="mt-4 block text-center text-sm font-semibold text-slate-500 hover:text-[#0b5fa5]">
+            <Link
+              href="/tests"
+              className="mt-4 block text-center text-sm font-semibold text-slate-500 hover:text-[#0b5fa5]"
+            >
               ← Quay lại danh sách
             </Link>
           </aside>
@@ -704,7 +780,9 @@ function ResultScreen({
       window.location.href = `/practice/${session.id}`;
     } catch (reason) {
       setRetryError(
-        reason instanceof Error ? reason.message : "Không tạo được bài luyện lại",
+        reason instanceof Error
+          ? reason.message
+          : "Không tạo được bài luyện lại",
       );
       setRetrying(false);
     }
@@ -732,23 +810,40 @@ function ResultScreen({
                   ? "Hết giờ · Đã tự động nộp bài"
                   : "Đã hoàn thành bài thi"}
               </p>
-              <h2 className="mt-2 text-2xl font-black text-[#082c59] sm:text-3xl">{payload.test.title}</h2>
+              <h2 className="mt-2 text-2xl font-black text-[#082c59] sm:text-3xl">
+                {payload.test.title}
+              </h2>
             </div>
 
             <section className="mx-auto mt-7 max-w-2xl rounded-2xl border border-blue-200 bg-white px-6 py-6 shadow-[0_18px_60px_rgba(18,73,126,0.12)] sm:px-10">
               <p className="text-center text-sm font-bold text-slate-500">
-                {result.score.hasConversion ? "Điểm quy đổi tham khảo" : "Tổng số câu đúng"}
+                {result.score.hasConversion
+                  ? "Điểm quy đổi tham khảo"
+                  : "Tổng số câu đúng"}
               </p>
               <p className="mt-1 text-center text-5xl font-black text-[#075fa8]">
-                {result.score.hasConversion ? result.score.totalScaled : result.correctCount}
+                {result.score.hasConversion
+                  ? result.score.totalScaled
+                  : result.correctCount}
                 <span className="ml-1 text-base font-bold text-slate-400">
-                  /{result.score.hasConversion ? scoreMaximum : result.questionCount}
+                  /
+                  {result.score.hasConversion
+                    ? scoreMaximum
+                    : result.questionCount}
                 </span>
               </p>
               <ScoreRail
-                score={result.score.hasConversion ? (result.score.totalScaled ?? 0) : result.correctCount}
+                score={
+                  result.score.hasConversion
+                    ? (result.score.totalScaled ?? 0)
+                    : result.correctCount
+                }
                 minimum={0}
-                maximum={result.score.hasConversion ? scoreMaximum : result.questionCount}
+                maximum={
+                  result.score.hasConversion
+                    ? scoreMaximum
+                    : result.questionCount
+                }
                 color="#1677c8"
               />
               <p className="mt-5 text-center text-xs leading-5 text-slate-500">
@@ -759,30 +854,78 @@ function ResultScreen({
             </section>
 
             <div className="mt-5 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-              <SummaryMetric label="Đúng" value={result.correctCount} tone="text-emerald-600" />
-              <SummaryMetric label="Sai" value={result.wrongCount} tone="text-rose-600" />
-              <SummaryMetric label="Bỏ trống" value={result.unansweredCount} tone="text-amber-600" />
-              <SummaryMetric label="Thời gian làm" value={formatClock(result.durationMs)} tone="text-[#075fa8]" />
+              <SummaryMetric
+                label="Đúng"
+                value={result.correctCount}
+                tone="text-emerald-600"
+              />
+              <SummaryMetric
+                label="Sai"
+                value={result.wrongCount}
+                tone="text-rose-600"
+              />
+              <SummaryMetric
+                label="Bỏ trống"
+                value={result.unansweredCount}
+                tone="text-amber-600"
+              />
+              <SummaryMetric
+                label="Thời gian làm"
+                value={formatClock(result.durationMs)}
+                tone="text-[#075fa8]"
+              />
             </div>
 
-            <div className={`mt-5 grid gap-5 ${result.score.listening.total > 0 && result.score.reading.total > 0 ? "md:grid-cols-2" : "mx-auto max-w-2xl"}`}>
+            <div
+              className={`mt-5 grid gap-5 ${result.score.listening.total > 0 && result.score.reading.total > 0 ? "md:grid-cols-2" : "mx-auto max-w-2xl"}`}
+            >
               {result.score.listening.total > 0 && (
-                <ResultSectionCard title="Listening" section={result.score.listening} accent="#1677c8" tint="#dceeff" />
+                <ResultSectionCard
+                  title="Listening"
+                  section={result.score.listening}
+                  accent="#1677c8"
+                  tint="#dceeff"
+                />
               )}
               {result.score.reading.total > 0 && (
-                <ResultSectionCard title="Reading" section={result.score.reading} accent="#526dcc" tint="#e9efff" />
+                <ResultSectionCard
+                  title="Reading"
+                  section={result.score.reading}
+                  accent="#526dcc"
+                  tint="#e9efff"
+                />
               )}
             </div>
 
             {result.parts.length > 0 && <PartAnalytics parts={result.parts} />}
 
             <section className="mt-5 grid gap-3 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm sm:grid-cols-2 lg:grid-cols-4">
-              <SummaryMetric label="Thời gian active" value={formatClock(result.analytics.totalActiveTimeMs)} compact />
-              <SummaryMetric label="Câu làm quá lâu" value={result.analytics.tooLongCount} compact />
-              <SummaryMetric label="Lượt quay lại" value={result.analytics.revisitCount} compact />
-              <SummaryMetric label="Câu cuối bỏ trống" value={result.analytics.finalUnansweredCount} compact />
+              <SummaryMetric
+                label="Thời gian active"
+                value={formatClock(result.analytics.totalActiveTimeMs)}
+                compact
+              />
+              <SummaryMetric
+                label="Câu làm quá lâu"
+                value={result.analytics.tooLongCount}
+                compact
+              />
+              <SummaryMetric
+                label="Lượt quay lại"
+                value={result.analytics.revisitCount}
+                compact
+              />
+              <SummaryMetric
+                label="Câu cuối bỏ trống"
+                value={result.analytics.finalUnansweredCount}
+                compact
+              />
             </section>
-            {retryError && <p className="mt-4 rounded-xl bg-red-50 p-4 text-center text-sm font-bold text-red-700">{retryError}</p>}
+            {retryError && (
+              <p className="mt-4 rounded-xl bg-red-50 p-4 text-center text-sm font-bold text-red-700">
+                {retryError}
+              </p>
+            )}
           </div>
         </main>
 
@@ -793,8 +936,23 @@ function ResultScreen({
           >
             Về danh sách đề
           </Link>
-          <Link href={`/review/${attempt.id}`} className="rounded-md bg-[#07579a] px-5 py-2.5 text-sm font-bold text-white shadow-sm transition-colors hover:bg-[#064a82]">Xem lại đáp án</Link>
-          {result.wrongCount > 0 && <button onClick={() => void startRetry()} disabled={retrying} className="rounded-md bg-emerald-600 px-5 py-2.5 text-sm font-bold text-white shadow-sm transition hover:bg-emerald-700 disabled:opacity-50">{retrying ? "Đang tạo…" : `Luyện lại ${result.wrongCount} câu sai`}</button>}
+          <Link
+            href={`/review/${attempt.id}`}
+            className="rounded-md bg-[#07579a] px-5 py-2.5 text-sm font-bold text-white shadow-sm transition-colors hover:bg-[#064a82]"
+          >
+            Xem lại đáp án
+          </Link>
+          {result.wrongCount > 0 && (
+            <button
+              onClick={() => void startRetry()}
+              disabled={retrying}
+              className="rounded-md bg-emerald-600 px-5 py-2.5 text-sm font-bold text-white shadow-sm transition hover:bg-emerald-700 disabled:opacity-50"
+            >
+              {retrying
+                ? "Đang tạo…"
+                : `Luyện lại ${result.wrongCount} câu sai`}
+            </button>
+          )}
         </footer>
       </section>
     </div>
@@ -812,7 +970,8 @@ function ResultSectionCard({
   accent: string;
   tint: string;
 }) {
-  const percentage = section.total > 0 ? Math.round((section.correct / section.total) * 100) : 0;
+  const percentage =
+    section.total > 0 ? Math.round((section.correct / section.total) * 100) : 0;
   return (
     <article className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
       <header
@@ -828,17 +987,31 @@ function ResultSectionCard({
           </span>
           {title}
         </span>
-        <span className="text-xs text-slate-500">{section.correct}/{section.total} câu đúng</span>
+        <span className="text-xs text-slate-500">
+          {section.correct}/{section.total} câu đúng
+        </span>
       </header>
       <div className="px-6 py-5">
-        <p className="text-center text-sm font-semibold text-slate-500">Raw score</p>
-        <p className="mt-1 text-center text-3xl font-black" style={{ color: accent }}>
+        <p className="text-center text-sm font-semibold text-slate-500">
+          Raw score
+        </p>
+        <p
+          className="mt-1 text-center text-3xl font-black"
+          style={{ color: accent }}
+        >
           {section.correct}
           <span className="ml-1 text-sm text-slate-400">/{section.total}</span>
         </p>
-        <ScoreRail score={section.correct} minimum={0} maximum={section.total} color={accent} />
+        <ScoreRail
+          score={section.correct}
+          minimum={0}
+          maximum={section.total}
+          color={accent}
+        />
         {section.scaled !== null && (
-          <p className="mt-4 rounded-lg bg-blue-50 px-3 py-2 text-center text-sm font-bold text-[#075fa8]">Điểm quy đổi: {section.scaled}/495</p>
+          <p className="mt-4 rounded-lg bg-blue-50 px-3 py-2 text-center text-sm font-bold text-[#075fa8]">
+            Điểm quy đổi: {section.scaled}/495
+          </p>
         )}
         <div className="mt-5 rounded-md bg-slate-50 px-4 py-3">
           <p className="text-xs font-bold uppercase tracking-wider text-slate-400">
@@ -914,9 +1087,21 @@ function SummaryMetric({
   compact?: boolean;
 }) {
   return (
-    <article className={compact ? "rounded-xl bg-slate-50 px-4 py-3" : "rounded-xl border border-slate-200 bg-white px-5 py-4 shadow-sm"}>
-      <p className="text-xs font-bold uppercase tracking-wider text-slate-400">{label}</p>
-      <p className={`mt-1 font-black ${compact ? "text-xl" : "text-2xl"} ${tone}`}>{value}</p>
+    <article
+      className={
+        compact
+          ? "rounded-xl bg-slate-50 px-4 py-3"
+          : "rounded-xl border border-slate-200 bg-white px-5 py-4 shadow-sm"
+      }
+    >
+      <p className="text-xs font-bold uppercase tracking-wider text-slate-400">
+        {label}
+      </p>
+      <p
+        className={`mt-1 font-black ${compact ? "text-xl" : "text-2xl"} ${tone}`}
+      >
+        {value}
+      </p>
     </article>
   );
 }
@@ -926,34 +1111,78 @@ function PartAnalytics({ parts }: { parts: AttemptPartResult[] }) {
     <section className="mt-5 overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm">
       <header className="border-b border-slate-200 bg-[#082c59] px-5 py-4 text-white">
         <h3 className="font-extrabold">Kết quả theo từng Part</h3>
-        <p className="mt-1 text-xs text-blue-100">Thời gian chỉ tính lúc tab đang mở và câu hỏi đang active.</p>
+        <p className="mt-1 text-xs text-blue-100">
+          Thời gian chỉ tính lúc tab đang mở và câu hỏi đang active.
+        </p>
       </header>
       <div className="grid gap-3 p-4 md:grid-cols-2 xl:grid-cols-3">
         {parts.map((part) => {
-          const percentage = part.total > 0 ? Math.round((part.correct / part.total) * 100) : 0;
+          const percentage =
+            part.total > 0 ? Math.round((part.correct / part.total) * 100) : 0;
           return (
-            <article key={part.part} className="rounded-xl border border-slate-200 bg-slate-50/70 p-4">
+            <article
+              key={part.part}
+              className="rounded-xl border border-slate-200 bg-slate-50/70 p-4"
+            >
               <div className="flex items-start justify-between gap-3">
                 <div>
-                  <p className="text-lg font-black text-[#075fa8]">{partLabel(part.part)}</p>
-                  <p className="text-xs text-slate-500">{part.correct}/{part.total} đúng · {part.unanswered} bỏ trống</p>
+                  <p className="text-lg font-black text-[#075fa8]">
+                    {partLabel(part.part)}
+                  </p>
+                  <p className="text-xs text-slate-500">
+                    {part.correct}/{part.total} đúng · {part.unanswered} bỏ
+                    trống
+                  </p>
                 </div>
-                <span className="rounded-full bg-blue-100 px-2.5 py-1 text-xs font-black text-[#075fa8]">{percentage}%</span>
+                <span className="rounded-full bg-blue-100 px-2.5 py-1 text-xs font-black text-[#075fa8]">
+                  {percentage}%
+                </span>
               </div>
               <div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-200">
-                <div className="h-full rounded-full bg-gradient-to-r from-[#1677c8] to-[#55a7e8]" style={{ width: `${percentage}%` }} />
+                <div
+                  className="h-full rounded-full bg-gradient-to-r from-[#1677c8] to-[#55a7e8]"
+                  style={{ width: `${percentage}%` }}
+                />
               </div>
               <dl className="mt-4 grid grid-cols-2 gap-2 text-xs">
-                <PartMetric label="Tổng thời gian" value={formatClock(part.activeTimeMs)} />
-                <PartMetric label="TB mỗi câu" value={formatCompactTime(part.averageTimeMs)} />
-                <PartMetric label={`Quá ${Math.round(part.thresholdMs / 1000)} giây`} value={`${part.tooLongCount} câu`} />
-                <PartMetric label="Quay lại" value={`${part.revisitCount} lượt`} />
+                <PartMetric
+                  label="Tổng thời gian"
+                  value={formatClock(part.activeTimeMs)}
+                />
+                <PartMetric
+                  label="TB mỗi câu"
+                  value={formatCompactTime(part.averageTimeMs)}
+                />
+                <PartMetric
+                  label={`Quá ${Math.round(part.thresholdMs / 1000)} giây`}
+                  value={`${part.tooLongCount} câu`}
+                />
+                <PartMetric
+                  label="Quay lại"
+                  value={`${part.revisitCount} lượt`}
+                />
               </dl>
               <div className="mt-3 grid grid-cols-2 gap-x-3 gap-y-1 border-t border-slate-200 pt-3 text-[11px] text-slate-500">
-                <span>Nhanh + đúng: <b className="text-emerald-600">{part.performance.fastCorrect}</b></span>
-                <span>Nhanh + sai: <b className="text-rose-500">{part.performance.fastWrong}</b></span>
-                <span>Chậm + đúng: <b className="text-emerald-600">{part.performance.slowCorrect}</b></span>
-                <span>Chậm + sai: <b className="text-rose-500">{part.performance.slowWrong}</b></span>
+                <span>
+                  Nhanh + đúng:{" "}
+                  <b className="text-emerald-600">
+                    {part.performance.fastCorrect}
+                  </b>
+                </span>
+                <span>
+                  Nhanh + sai:{" "}
+                  <b className="text-rose-500">{part.performance.fastWrong}</b>
+                </span>
+                <span>
+                  Chậm + đúng:{" "}
+                  <b className="text-emerald-600">
+                    {part.performance.slowCorrect}
+                  </b>
+                </span>
+                <span>
+                  Chậm + sai:{" "}
+                  <b className="text-rose-500">{part.performance.slowWrong}</b>
+                </span>
               </div>
             </article>
           );
@@ -1070,13 +1299,26 @@ function ListeningPlayer({
   const targetQuestion = group?.questions.find(
     (question) => question.id === timeline.questionId,
   );
-  const questions = targetQuestion ? [targetQuestion] : (group?.questions ?? []);
+  const questions = targetQuestion
+    ? [targetQuestion]
+    : (group?.questions ?? []);
   const shortcutQuestion = targetQuestion ?? group?.questions[0];
-  const activeTimelineQuestionId = targetQuestion?.id ?? questions[0]?.id ?? null;
+  const activeTimelineQuestionId =
+    targetQuestion?.id ?? questions[0]?.id ?? null;
   const isDirection = timeline.event?.type === "DIRECTION";
   const isExample = timeline.event?.type === "EXAMPLE";
+  const showsListeningDirections = payload.test.type === "FULL_TEST";
+  const firstDirectionId = payload.timeline
+    .filter((event) => event.type === "DIRECTION")
+    .sort((left, right) => left.startMs - right.startMs)[0]?.id;
+  const isListeningIntro =
+    showsListeningDirections &&
+    isDirection &&
+    timeline.event?.id === firstDirectionId;
   const totalQuestionCount = countQuestions(payload);
   const answeredCount = Object.keys(answers).length;
+  const visibleStimuli =
+    group?.stimuli.filter((stimulus) => stimulus.type !== "AUDIO") ?? [];
 
   useEffect(() => {
     onActiveQuestion(activeTimelineQuestionId);
@@ -1109,16 +1351,25 @@ function ListeningPlayer({
     >
       <div className="grid min-h-[calc(100vh-64px)] place-items-center bg-[#f2f3f5] p-5">
         <section className="w-full max-w-5xl rounded-sm border border-slate-300 bg-white p-6 shadow-sm">
-          {isDirection || isExample ? (
+          {showsListeningDirections && (isDirection || isExample) ? (
             <div className="mx-auto max-w-3xl py-10 text-center">
               <p className="text-xs font-bold uppercase tracking-widest text-[#07579a]">
-                {isExample ? "Example" : "Directions"}
+                {isExample
+                  ? "Example"
+                  : isListeningIntro
+                    ? "Listening directions"
+                    : "Directions"}
               </p>
-              <h2 className="mt-5 text-2xl font-bold">
-                {section?.part?.replace("PART_", "Part ")}
+              <h2 className="mt-5 text-3xl font-bold text-[#123f70]">
+                {isListeningIntro
+                  ? "LISTENING TEST"
+                  : section?.part?.replace("PART_", "Part ")}
               </h2>
               <p className="mt-5 text-lg leading-8 text-slate-700">
-                {section?.direction?.text ?? "Listen carefully and select the best answer."}
+                {isListeningIntro
+                  ? "In the Listening test, you will demonstrate how well you understand spoken English. The Listening section lasts approximately 45 minutes and contains four parts. Directions are provided for each part. Listen carefully and select the best answer for every question. The audio is played only once and cannot be replayed."
+                  : (section?.direction?.text ??
+                    "Listen carefully and select the best answer.")}
               </p>
               {isExample && section?.direction?.exampleHtml && (
                 <SafeHtml html={section.direction.exampleHtml} />
@@ -1127,25 +1378,31 @@ function ListeningPlayer({
           ) : group ? (
             <div className="grid gap-7 lg:grid-cols-[minmax(280px,0.9fr)_1.1fr]">
               <div>
-                <p className="mb-4 text-sm font-bold text-[#07579a]">
-                  {section?.part?.replace("PART_", "Part ")}
+                <p className="mb-5 text-[17px] font-bold leading-7 text-[#124b78]">
+                  {listeningQuestionInstruction(section?.part)}
                 </p>
-                {group.stimuli
-                  .filter((stimulus) => stimulus.type !== "AUDIO")
-                  .map((stimulus) => (
-                    <Stimulus key={stimulus.id} stimulus={stimulus} />
-                  ))}
-                {group.stimuli.every((stimulus) => stimulus.type === "AUDIO") && (
-                  <div className="grid min-h-56 place-items-center rounded-xl bg-slate-50 text-center text-slate-500">
-                    <p>Listen to the audio and select the best answer.</p>
+                {visibleStimuli.map((stimulus) => (
+                  <Stimulus key={stimulus.id} stimulus={stimulus} />
+                ))}
+                {visibleStimuli.length === 0 && section?.part === "PART_1" && (
+                  <div className="grid min-h-56 place-items-center rounded-xl border border-dashed border-amber-300 bg-amber-50 p-5 text-center text-amber-700">
+                    Part 1 image is unavailable.
                   </div>
                 )}
+                {visibleStimuli.length === 0 &&
+                  section?.part !== "PART_1" &&
+                  section?.part !== "PART_2" && (
+                    <div className="grid min-h-56 place-items-center rounded-xl bg-slate-50 text-center text-slate-500">
+                      <p>Listen to the audio and select the best answer.</p>
+                    </div>
+                  )}
               </div>
               <QuestionList
                 questions={questions}
                 answers={answers}
                 setAnswer={setAnswer}
                 onActivate={onActiveQuestion}
+                part={section?.part}
               />
             </div>
           ) : (
@@ -1189,7 +1446,11 @@ function ReadingPlayer({
         .flatMap((section) =>
           section.questionGroups.flatMap((group) =>
             section.part === "PART_5"
-              ? group.questions.map((question) => ({ section, group, questions: [question] }))
+              ? group.questions.map((question) => ({
+                  section,
+                  group,
+                  questions: [question],
+                }))
               : [{ section, group, questions: group.questions }],
           ),
         ),
@@ -1205,10 +1466,14 @@ function ReadingPlayer({
   const [activeQuestionId, setActiveQuestionId] = useState(
     initialQuestionId ?? pages[initialPageIndex]?.questions[0]?.id ?? "",
   );
-  const [catalogMode, setCatalogMode] = useState<"navigator" | "submit" | null>(null);
+  const [catalogMode, setCatalogMode] = useState<"navigator" | "submit" | null>(
+    null,
+  );
   const lastQuestionNumber = Math.max(
     payload.test.totalQuestions,
-    ...pages.flatMap((item) => item.questions.map((question) => question.number)),
+    ...pages.flatMap((item) =>
+      item.questions.map((question) => question.number),
+    ),
   );
   const totalQuestionCount = countQuestions(payload);
   const answeredCount = Object.keys(answers).length;
@@ -1216,15 +1481,18 @@ function ReadingPlayer({
   const activeQuestion =
     page?.questions.find((question) => question.id === activeQuestionId) ??
     page?.questions[0];
-  const go = useCallback((index: number, questionId?: string) => {
-    const next = pages[index];
-    if (!next) return;
-    setPageIndex(index);
-    const nextQuestionId = questionId ?? next.questions[0]?.id ?? "";
-    setActiveQuestionId(nextQuestionId);
-    if (nextQuestionId) onActiveQuestion(nextQuestionId);
-    setCatalogMode(null);
-  }, [onActiveQuestion, pages]);
+  const go = useCallback(
+    (index: number, questionId?: string) => {
+      const next = pages[index];
+      if (!next) return;
+      setPageIndex(index);
+      const nextQuestionId = questionId ?? next.questions[0]?.id ?? "";
+      setActiveQuestionId(nextQuestionId);
+      if (nextQuestionId) onActiveQuestion(nextQuestionId);
+      setCatalogMode(null);
+    },
+    [onActiveQuestion, pages],
+  );
 
   useEffect(() => {
     if (activeQuestion?.id) onActiveQuestion(activeQuestion.id);
@@ -1256,7 +1524,16 @@ function ReadingPlayer({
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [activeQuestion, catalogMode, go, onActiveQuestion, pageIndex, pages.length, setAnswer, toggleFlag]);
+  }, [
+    activeQuestion,
+    catalogMode,
+    go,
+    onActiveQuestion,
+    pageIndex,
+    pages.length,
+    setAnswer,
+    toggleFlag,
+  ]);
 
   if (!page) return <ExamMessage title="Đề không có section Reading" />;
   const range = `${page.questions[0]?.number ?? "—"}${page.questions.length > 1 ? `–${page.questions.at(-1)?.number}` : ""}`;
@@ -1272,13 +1549,16 @@ function ReadingPlayer({
         <section className="exam-scrollbar min-h-0 overflow-y-auto border border-[#d7dde6] bg-white p-6 shadow-[0_1px_2px_rgb(15_23_42/4%)]">
           {page.section.part === "PART_5" ? (
             <p className="text-lg font-semibold leading-8 text-[#124b78]">
-              {page.section.direction?.text ?? "Select the best answer to complete the sentence."}
+              {page.section.direction?.text ??
+                "Select the best answer to complete the sentence."}
             </p>
           ) : page.group.stimuli.length ? (
             page.group.stimuli.map((stimulus, index) => (
               <div key={stimulus.id} className="mb-8">
                 {page.group.stimuli.length > 1 && (
-                  <h2 className="mb-5 text-lg font-semibold text-[#124b78]">Passage {index + 1}</h2>
+                  <h2 className="mb-5 text-lg font-semibold text-[#124b78]">
+                    Passage {index + 1}
+                  </h2>
                 )}
                 <Stimulus stimulus={stimulus} />
               </div>
@@ -1311,16 +1591,36 @@ function ReadingPlayer({
           onClick={() => activeQuestion && toggleFlag(activeQuestion.id)}
           className="group flex h-full items-center gap-3 justify-self-start pr-5 text-sm font-medium text-slate-700"
         >
-          <span className={`grid size-7 place-items-center rounded-md border-2 text-sm shadow-sm transition-colors ${activeQuestion && flags.includes(activeQuestion.id) ? "border-[#1677c8] bg-[#1677c8] text-white" : "border-slate-400 bg-white group-hover:border-[#07579a]"}`}>
+          <span
+            className={`grid size-7 place-items-center rounded-md border-2 text-sm shadow-sm transition-colors ${activeQuestion && flags.includes(activeQuestion.id) ? "border-[#1677c8] bg-[#1677c8] text-white" : "border-slate-400 bg-white group-hover:border-[#07579a]"}`}
+          >
             {activeQuestion && flags.includes(activeQuestion.id) ? "✓" : ""}
           </span>
           <span>Mark item for review</span>
-          <kbd className="hidden rounded border border-slate-300 bg-white px-1.5 py-0.5 font-mono text-[10px] text-slate-500 lg:inline">F</kbd>
+          <kbd className="hidden rounded border border-slate-300 bg-white px-1.5 py-0.5 font-mono text-[10px] text-slate-500 lg:inline">
+            F
+          </kbd>
         </button>
-        <button onClick={() => setCatalogMode("navigator")} aria-label="Question list" className="grid h-14 w-14 place-items-center bg-[#07579a] text-xl text-white transition-colors hover:bg-[#064a82]">☷</button>
+        <button
+          onClick={() => setCatalogMode("navigator")}
+          aria-label="Question list"
+          className="grid h-14 w-14 place-items-center bg-[#07579a] text-xl text-white transition-colors hover:bg-[#064a82]"
+        >
+          ☷
+        </button>
         <div className="flex">
-          <NavButton disabled={pageIndex === 0} onClick={() => go(pageIndex - 1)}>←</NavButton>
-          <NavButton disabled={pageIndex === pages.length - 1} onClick={() => go(pageIndex + 1)}>→</NavButton>
+          <NavButton
+            disabled={pageIndex === 0}
+            onClick={() => go(pageIndex - 1)}
+          >
+            ←
+          </NavButton>
+          <NavButton
+            disabled={pageIndex === pages.length - 1}
+            onClick={() => go(pageIndex + 1)}
+          >
+            →
+          </NavButton>
         </div>
       </footer>
       {catalogMode && (
@@ -1357,7 +1657,11 @@ function QuestionCatalog({
 }: {
   mode: "navigator" | "submit";
   payload: CandidatePayload;
-  pages: Array<{ section: CandidateSection; group: CandidateGroup; questions: CandidateQuestion[] }>;
+  pages: Array<{
+    section: CandidateSection;
+    group: CandidateGroup;
+    questions: CandidateQuestion[];
+  }>;
   answers: Record<string, string>;
   flags: string[];
   activeQuestionId: string;
@@ -1370,47 +1674,91 @@ function QuestionCatalog({
   const allQuestions = payload.sections.flatMap((section) =>
     section.questionGroups.flatMap((group) => group.questions),
   );
-  const unansweredCount = allQuestions.filter((question) => !answers[question.id]).length;
+  const unansweredCount = allQuestions.filter(
+    (question) => !answers[question.id],
+  ).length;
   return (
-    <div role="dialog" aria-modal="true" aria-label={mode === "submit" ? "Xác nhận nộp bài" : "Danh mục câu hỏi"} className="absolute inset-0 z-40 grid place-items-center bg-slate-950/55 p-4">
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-label={mode === "submit" ? "Xác nhận nộp bài" : "Danh mục câu hỏi"}
+      className="absolute inset-0 z-40 grid place-items-center bg-slate-950/55 p-4"
+    >
       <section className="exam-scrollbar max-h-[86vh] w-full max-w-xl overflow-y-auto rounded bg-white p-6 shadow-2xl">
         <div className="flex items-center justify-between border-b border-slate-200 pb-4">
-          <div><h2 className="text-xl font-bold text-[#07579a]">{mode === "submit" ? "Xác nhận nộp bài" : "Danh mục câu hỏi"}</h2><p className="text-xs text-slate-500">{mode === "submit" ? "Kiểm tra tiến độ trước khi kết thúc lượt thi." : "Chọn số câu để chuyển trang."}</p></div>
-          <button onClick={close} className="grid size-9 place-items-center rounded-full bg-slate-100 text-xl">×</button>
+          <div>
+            <h2 className="text-xl font-bold text-[#07579a]">
+              {mode === "submit" ? "Xác nhận nộp bài" : "Danh mục câu hỏi"}
+            </h2>
+            <p className="text-xs text-slate-500">
+              {mode === "submit"
+                ? "Kiểm tra tiến độ trước khi kết thúc lượt thi."
+                : "Chọn số câu để chuyển trang."}
+            </p>
+          </div>
+          <button
+            onClick={close}
+            className="grid size-9 place-items-center rounded-full bg-slate-100 text-xl"
+          >
+            ×
+          </button>
         </div>
         {mode === "submit" && (
-          <div className={`mt-5 rounded-xl border px-4 py-3 text-sm ${unansweredCount > 0 ? "border-amber-200 bg-amber-50 text-amber-800" : "border-emerald-200 bg-emerald-50 text-emerald-700"}`}>
+          <div
+            className={`mt-5 rounded-xl border px-4 py-3 text-sm ${unansweredCount > 0 ? "border-amber-200 bg-amber-50 text-amber-800" : "border-emerald-200 bg-emerald-50 text-emerald-700"}`}
+          >
             {unansweredCount > 0
               ? `Bạn còn ${unansweredCount} câu chưa trả lời. Bạn vẫn muốn nộp bài?`
               : "Bạn đã trả lời tất cả câu hỏi. Bài thi đã sẵn sàng để nộp."}
           </div>
         )}
         <div className="mt-4 flex flex-wrap gap-4 text-xs text-slate-500">
-          <span><i className="mr-1.5 inline-block size-3 rounded-sm bg-[#07579a]" />Đã trả lời</span>
-          <span><i className="mr-1.5 inline-block size-3 rounded-sm border border-slate-300 bg-white" />Chưa trả lời</span>
-          <span><i className="mr-1.5 inline-block size-3 rounded-sm border-2 border-[#1677c8]" />Đã flag</span>
+          <span>
+            <i className="mr-1.5 inline-block size-3 rounded-sm bg-[#07579a]" />
+            Đã trả lời
+          </span>
+          <span>
+            <i className="mr-1.5 inline-block size-3 rounded-sm border border-slate-300 bg-white" />
+            Chưa trả lời
+          </span>
+          <span>
+            <i className="mr-1.5 inline-block size-3 rounded-sm border-2 border-[#1677c8]" />
+            Đã flag
+          </span>
         </div>
         <div className="mt-5 space-y-5">
-          {payload.sections.filter((section) => section.kind === "READING").map((section) => (
-            <div key={section.id}>
-              <h3 className="mb-2 font-bold text-slate-700">{section.part?.replace("PART_", "Part ")}</h3>
-              <div className="grid grid-cols-5 gap-2 sm:grid-cols-10">
-                {section.questionGroups.flatMap((group) => group.questions).map((question) => {
-                  const target = pages.findIndex((page) => page.questions.some((item) => item.id === question.id));
-                  return (
-                    <button
-                      key={question.id}
-                      onClick={() => jump(target, question.id)}
-                      className={`relative aspect-square rounded border text-[11px] font-bold ${answers[question.id] ? "border-[#07579a] bg-[#07579a] text-white" : "border-slate-300"} ${activeQuestionId === question.id ? "ring-2 ring-slate-700" : ""}`}
-                    >
-                      {question.number}
-                      {flags.includes(question.id) && <span className="absolute -right-1 -top-2 text-[#1677c8]">⚑</span>}
-                    </button>
-                  );
-                })}
+          {payload.sections
+            .filter((section) => section.kind === "READING")
+            .map((section) => (
+              <div key={section.id}>
+                <h3 className="mb-2 font-bold text-slate-700">
+                  {section.part?.replace("PART_", "Part ")}
+                </h3>
+                <div className="grid grid-cols-5 gap-2 sm:grid-cols-10">
+                  {section.questionGroups
+                    .flatMap((group) => group.questions)
+                    .map((question) => {
+                      const target = pages.findIndex((page) =>
+                        page.questions.some((item) => item.id === question.id),
+                      );
+                      return (
+                        <button
+                          key={question.id}
+                          onClick={() => jump(target, question.id)}
+                          className={`relative aspect-square rounded border text-[11px] font-bold ${answers[question.id] ? "border-[#07579a] bg-[#07579a] text-white" : "border-slate-300"} ${activeQuestionId === question.id ? "ring-2 ring-slate-700" : ""}`}
+                        >
+                          {question.number}
+                          {flags.includes(question.id) && (
+                            <span className="absolute -right-1 -top-2 text-[#1677c8]">
+                              ⚑
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })}
+                </div>
               </div>
-            </div>
-          ))}
+            ))}
         </div>
         <div className="mt-6 flex items-center justify-end gap-3 border-t border-slate-200 pt-4">
           <button
@@ -1424,7 +1772,11 @@ function QuestionCatalog({
             disabled={submitting}
             className="rounded bg-[#1677c8] px-4 py-2 text-sm font-bold text-white transition-colors hover:bg-[#0b5fa5] disabled:opacity-60"
           >
-            {submitting ? "Đang nộp…" : mode === "submit" ? "Nộp bài" : "Kết thúc bài thi"}
+            {submitting
+              ? "Đang nộp…"
+              : mode === "submit"
+                ? "Nộp bài"
+                : "Kết thúc bài thi"}
           </button>
         </div>
       </section>
@@ -1463,8 +1815,12 @@ function ExamShell({
   return (
     <div className="relative h-screen overflow-hidden">
       <header className="grid h-16 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 bg-[#001b47] px-3 text-white shadow-sm sm:gap-4 sm:px-6">
-        <div className="rounded-md bg-white px-2 py-2 text-[10px] font-black text-[#07579a] shadow-sm sm:px-3 sm:text-xs">PACE<span className="text-[#2493dd]">LINGO</span></div>
-        <h1 className="truncate text-center text-xs font-bold sm:text-lg">{title}</h1>
+        <div className="rounded-md bg-white px-2 py-2 text-[10px] font-black text-[#07579a] shadow-sm sm:px-3 sm:text-xs">
+          PACE<span className="text-[#2493dd]">LINGO</span>
+        </div>
+        <h1 className="truncate text-center text-xs font-bold sm:text-lg">
+          {title}
+        </h1>
         <div className="flex items-center gap-2 text-xs font-bold tabular-nums">
           <button
             type="button"
@@ -1482,7 +1838,14 @@ function ExamShell({
             <ClockIcon />
             {timer}
           </span>
-          {submit && <button onClick={submit} className="rounded-md bg-[#1677c8] px-4 py-2 text-white shadow-sm transition-colors hover:bg-[#0b5fa5]">Submit</button>}
+          {submit && (
+            <button
+              onClick={submit}
+              className="rounded-md bg-[#1677c8] px-4 py-2 text-white shadow-sm transition-colors hover:bg-[#0b5fa5]"
+            >
+              Submit
+            </button>
+          )}
         </div>
       </header>
       {children}
@@ -1490,27 +1853,67 @@ function ExamShell({
   );
 }
 
+function listeningQuestionInstruction(
+  part: CandidateSection["part"] | undefined,
+) {
+  if (part === "PART_1") {
+    return "Select the one statement that best describes what you see in the picture.";
+  }
+  if (part === "PART_2") {
+    return "Select the best response to the question.";
+  }
+  return "Listen and select the best answer.";
+}
+
 function QuestionList({
   questions,
   answers,
   setAnswer,
   onActivate,
+  part,
 }: {
   questions: CandidateQuestion[];
   answers: Record<string, string>;
   setAnswer: (questionId: string, optionId: string) => void;
   onActivate?: (questionId: string) => void;
+  part?: CandidateSection["part"];
 }) {
+  const labelOnly = part === "PART_1" || part === "PART_2";
+
   return (
     <div className="space-y-8">
       {questions.map((question) => (
         <article key={question.id} onClick={() => onActivate?.(question.id)}>
-          <div className="flex gap-3 text-[17px] leading-7"><strong className="shrink-0">{question.number}.</strong><SafeHtml html={question.promptHtml} compact /></div>
+          <div className="flex gap-3 text-[17px] leading-7">
+            <strong className="shrink-0">{question.number}.</strong>
+            {labelOnly ? (
+              <span>Question {question.number}</span>
+            ) : (
+              <SafeHtml html={question.promptHtml} compact />
+            )}
+          </div>
           <div className="mt-4 space-y-2.5 pl-8">
             {question.options.map((option) => (
-              <label key={option.id} className={`flex cursor-pointer items-center gap-3.5 border px-4 py-3.5 text-[17px] leading-7 transition-colors ${answers[question.id] === option.id ? "border-[#2b69a9] bg-blue-50" : "border-slate-200 hover:border-blue-300 hover:bg-blue-50/40"}`}>
-                <input type="radio" name={question.id} checked={answers[question.id] === option.id} onChange={() => setAnswer(question.id, option.id)} className="size-5 shrink-0 accent-[#07579a]" />
-                <span><strong>({option.label})</strong> <HtmlText html={option.contentHtml} /></span>
+              <label
+                key={option.id}
+                className={`flex cursor-pointer items-center gap-3.5 border px-4 py-3.5 text-[17px] leading-7 transition-colors ${answers[question.id] === option.id ? "border-[#2b69a9] bg-blue-50" : "border-slate-200 hover:border-blue-300 hover:bg-blue-50/40"}`}
+              >
+                <input
+                  type="radio"
+                  name={question.id}
+                  checked={answers[question.id] === option.id}
+                  onChange={() => setAnswer(question.id, option.id)}
+                  className="size-5 shrink-0 accent-[#07579a]"
+                />
+                <span>
+                  <strong>({option.label})</strong>
+                  {!labelOnly && (
+                    <>
+                      {" "}
+                      <HtmlText html={option.contentHtml} />
+                    </>
+                  )}
+                </span>
               </label>
             ))}
           </div>
@@ -1521,25 +1924,66 @@ function QuestionList({
 }
 
 function Stimulus({ stimulus }: { stimulus: CandidateStimulus }) {
-  if (stimulus.type === "HTML") return <SafeHtml html={stimulus.contentHtml ?? ""} />;
+  if (stimulus.type === "HTML")
+    return <SafeHtml html={stimulus.contentHtml ?? ""} />;
   if (stimulus.type === "IMAGE") {
-    return stimulus.media ? <img src={stimulus.media.url} alt={stimulus.altText ?? stimulus.media.altText ?? "TOEIC stimulus"} className="mx-auto max-h-[520px] max-w-full object-contain" /> : <p className="rounded bg-amber-50 p-3 text-amber-700">{stimulus.altText ?? "Ảnh chưa được gắn"}</p>;
+    return stimulus.media ? (
+      <img
+        src={stimulus.media.url}
+        alt={stimulus.altText ?? stimulus.media.altText ?? "TOEIC stimulus"}
+        className="mx-auto max-h-[520px] max-w-full object-contain"
+      />
+    ) : (
+      <p className="rounded bg-amber-50 p-3 text-amber-700">
+        {stimulus.altText ?? "Ảnh chưa được gắn"}
+      </p>
+    );
   }
   return null;
 }
 
-function SafeHtml({ html, compact = false }: { html: string; compact?: boolean }) {
+function SafeHtml({
+  html,
+  compact = false,
+}: {
+  html: string;
+  compact?: boolean;
+}) {
   const textLength = html.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").length;
-  const blocks = (html.match(/<(p|div|article|table|tr|li|header|section)\b/gi) ?? []).length;
+  const blocks = (
+    html.match(/<(p|div|article|table|tr|li|header|section)\b/gi) ?? []
+  ).length;
   const height = compact
-    ? Math.min(340, Math.max(38, Math.ceil(textLength / 60) * 28 + blocks * 11 + 5))
-    : Math.min(5000, Math.max(180, Math.ceil(textLength / 55) * 28 + blocks * 18 + 70));
+    ? Math.min(
+        340,
+        Math.max(38, Math.ceil(textLength / 60) * 28 + blocks * 11 + 5),
+      )
+    : Math.min(
+        5000,
+        Math.max(180, Math.ceil(textLength / 55) * 28 + blocks * 18 + 70),
+      );
   const fontSize = compact ? 17 : 16;
-  return <iframe sandbox="" scrolling="no" srcDoc={`<!doctype html><meta charset="utf-8"><style>html,body{overflow:hidden}body{font:${fontSize}px/1.65 Roboto,"Segoe UI","Noto Sans",system-ui,sans-serif;margin:0;color:#172033}p:first-child{margin-top:0}p:last-child{margin-bottom:0}table{border-collapse:collapse;width:100%}td,th{border:1px solid #aaa;padding:8px}img{max-width:100%}</style>${html}`} style={{ height }} className="block w-full border-0 bg-white" title="Candidate content" />;
+  return (
+    <iframe
+      sandbox=""
+      scrolling="no"
+      srcDoc={`<!doctype html><meta charset="utf-8"><style>html,body{overflow:hidden}body{font:${fontSize}px/1.65 Roboto,"Segoe UI","Noto Sans",system-ui,sans-serif;margin:0;color:#172033}p:first-child{margin-top:0}p:last-child{margin-bottom:0}table{border-collapse:collapse;width:100%}td,th{border:1px solid #aaa;padding:8px}img{max-width:100%}</style>${html}`}
+      style={{ height }}
+      className="block w-full border-0 bg-white"
+      title="Candidate content"
+    />
+  );
 }
 
 function HtmlText({ html }: { html: string }) {
-  return <>{html.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim()}</>;
+  return (
+    <>
+      {html
+        .replace(/<[^>]*>/g, " ")
+        .replace(/\s+/g, " ")
+        .trim()}
+    </>
+  );
 }
 
 function ClockIcon() {
@@ -1560,34 +2004,125 @@ function ClockIcon() {
 
 function FullscreenIcon({ active }: { active: boolean }) {
   return active ? (
-    <svg viewBox="0 0 24 24" className="size-4" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 4v5H4m11-5v5h5M9 20v-5H4m11 5v-5h5" strokeLinecap="round" strokeLinejoin="round" /></svg>
+    <svg
+      viewBox="0 0 24 24"
+      className="size-4"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+    >
+      <path
+        d="M9 4v5H4m11-5v5h5M9 20v-5H4m11 5v-5h5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
   ) : (
-    <svg viewBox="0 0 24 24" className="size-4" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 4H4v5m11-5h5v5M9 20H4v-5m11 5h5v-5" strokeLinecap="round" strokeLinejoin="round" /></svg>
+    <svg
+      viewBox="0 0 24 24"
+      className="size-4"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+    >
+      <path
+        d="M9 4H4v5m11-5h5v5M9 20H4v-5m11 5h5v-5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
   );
 }
 
 function HeadphoneIcon() {
-  return <svg viewBox="0 0 24 24" className="size-6" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M4 14v-2a8 8 0 0 1 16 0v2" /><path d="M6 13H4a2 2 0 0 0-2 2v3a2 2 0 0 0 2 2h2zm12 0h2a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2h-2z" /></svg>;
+  return (
+    <svg
+      viewBox="0 0 24 24"
+      className="size-6"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.8"
+    >
+      <path d="M4 14v-2a8 8 0 0 1 16 0v2" />
+      <path d="M6 13H4a2 2 0 0 0-2 2v3a2 2 0 0 0 2 2h2zm12 0h2a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2h-2z" />
+    </svg>
+  );
 }
 
 function StartMetric({ value, label }: { value: string; label: string }) {
-  return <div className="rounded-xl border border-blue-100 bg-blue-50/60 p-3 text-center"><strong className="block text-xl font-black text-[#0b4f8a]">{value}</strong><span className="mt-1 block text-[11px] font-semibold text-slate-500">{label}</span></div>;
+  return (
+    <div className="rounded-xl border border-blue-100 bg-blue-50/60 p-3 text-center">
+      <strong className="block text-xl font-black text-[#0b4f8a]">
+        {value}
+      </strong>
+      <span className="mt-1 block text-[11px] font-semibold text-slate-500">
+        {label}
+      </span>
+    </div>
+  );
 }
 
 function InstructionItem({ children }: { children: React.ReactNode }) {
-  return <li className="flex gap-2.5"><span className="mt-1 grid size-4 shrink-0 place-items-center rounded-full bg-blue-100 text-[10px] font-black text-[#0b5fa5]">✓</span><span>{children}</span></li>;
+  return (
+    <li className="flex gap-2.5">
+      <span className="mt-1 grid size-4 shrink-0 place-items-center rounded-full bg-blue-100 text-[10px] font-black text-[#0b5fa5]">
+        ✓
+      </span>
+      <span>{children}</span>
+    </li>
+  );
 }
 
-function NavButton({ disabled, onClick, children }: { disabled: boolean; onClick: () => void; children: React.ReactNode }) {
-  return <button disabled={disabled} onClick={onClick} className="grid h-14 w-14 place-items-center bg-[#1677c8] text-xl font-bold text-white transition-colors hover:bg-[#0b5fa5] disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-100">{children}</button>;
+function NavButton({
+  disabled,
+  onClick,
+  children,
+}: {
+  disabled: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      disabled={disabled}
+      onClick={onClick}
+      className="grid h-14 w-14 place-items-center bg-[#1677c8] text-xl font-bold text-white transition-colors hover:bg-[#0b5fa5] disabled:cursor-not-allowed disabled:bg-slate-300 disabled:text-slate-100"
+    >
+      {children}
+    </button>
+  );
 }
 
 function ExamMessage({ title, detail }: { title: string; detail?: string }) {
-  return <main className="grid min-h-screen place-items-center bg-[#e9eaec] p-5"><div className="rounded-2xl bg-white p-8 text-center shadow-xl"><h1 className="text-xl font-bold">{title}</h1>{detail && <p className="mt-3 max-w-lg text-sm text-red-600">{detail}</p>}<Link href="/tests" className="mt-5 block text-sm text-[#07579a]">← Danh sách đề</Link></div></main>;
+  return (
+    <main className="grid min-h-screen place-items-center bg-[#e9eaec] p-5">
+      <div className="rounded-2xl bg-white p-8 text-center shadow-xl">
+        <h1 className="text-xl font-bold">{title}</h1>
+        {detail && (
+          <p className="mt-3 max-w-lg text-sm text-red-600">{detail}</p>
+        )}
+        <Link href="/tests" className="mt-5 block text-sm text-[#07579a]">
+          ← Danh sách đề
+        </Link>
+      </div>
+    </main>
+  );
 }
 
-function findGroup(payload: CandidatePayload, groupId: string | null, questionId: string | null) {
-  return payload.sections.flatMap((section) => section.questionGroups).find((group) => group.id === groupId || (questionId ? group.questions.some((question) => question.id === questionId) : false));
+function findGroup(
+  payload: CandidatePayload,
+  groupId: string | null,
+  questionId: string | null,
+) {
+  return payload.sections
+    .flatMap((section) => section.questionGroups)
+    .find(
+      (group) =>
+        group.id === groupId ||
+        (questionId
+          ? group.questions.some((question) => question.id === questionId)
+          : false),
+    );
 }
 
 function countQuestions(payload: CandidatePayload) {
@@ -1618,7 +2153,9 @@ function isShortcutBlocked(event: KeyboardEvent) {
   if (!(target instanceof HTMLElement)) return false;
   return Boolean(
     target.isContentEditable ||
-      target.closest("input, textarea, select, button, a, [contenteditable='true']"),
+    target.closest(
+      "input, textarea, select, button, a, [contenteditable='true']",
+    ),
   );
 }
 
@@ -1641,8 +2178,12 @@ function toAnswerInput(answer: AttemptAnswer) {
 }
 
 async function responseMessage(response: Response) {
-  const payload = (await response.json().catch(() => null)) as { message?: string | string[] } | null;
-  return Array.isArray(payload?.message) ? payload.message.join(", ") : payload?.message ?? `Request failed (${response.status})`;
+  const payload = (await response.json().catch(() => null)) as {
+    message?: string | string[];
+  } | null;
+  return Array.isArray(payload?.message)
+    ? payload.message.join(", ")
+    : (payload?.message ?? `Request failed (${response.status})`);
 }
 
 function ensureMediaReady(audio: HTMLAudioElement) {

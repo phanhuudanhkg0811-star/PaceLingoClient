@@ -154,7 +154,7 @@ export function AttemptReviewView({ attemptId }: { attemptId: string }) {
           {review.sections.map((section) =>
             section.groups.map((group) => {
               const questions = group.questions.filter((question) => visibleIds.has(question.id));
-              return questions.length ? <ReviewGroupCard key={group.id} group={group} questions={questions} part={section.part} kind={section.kind} /> : null;
+              return questions.length ? <ReviewGroupCard key={group.id} group={group} questions={questions} part={section.part} kind={section.kind} attemptId={review.attempt.id} /> : null;
             }),
           )}
           {visibleIds.size === 0 && <div className="rounded-2xl border border-dashed border-border bg-surface p-12 text-center text-muted">Không có câu hỏi phù hợp bộ lọc.</div>}
@@ -164,7 +164,7 @@ export function AttemptReviewView({ attemptId }: { attemptId: string }) {
   );
 }
 
-function ReviewGroupCard({ group, questions, part, kind }: { group: ReviewGroup; questions: ReviewQuestion[]; part: string | null; kind: string }) {
+function ReviewGroupCard({ group, questions, part, kind, attemptId }: { group: ReviewGroup; questions: ReviewQuestion[]; part: string | null; kind: string; attemptId: string }) {
   const hasStimuli = group.stimuli.length > 0;
   return (
     <section className="overflow-hidden rounded-2xl border border-border bg-surface shadow-sm">
@@ -175,7 +175,7 @@ function ReviewGroupCard({ group, questions, part, kind }: { group: ReviewGroup;
       <div className={hasStimuli ? "grid xl:grid-cols-2" : ""}>
         {hasStimuli && <div className="border-b border-border p-5 xl:border-b-0 xl:border-r"><ReviewStimuli stimuli={group.stimuli} /></div>}
         <div className="divide-y divide-border">
-          {questions.map((question) => <ReviewQuestionCard key={question.id} question={question} />)}
+          {questions.map((question) => <ReviewQuestionCard key={question.id} question={question} attemptId={attemptId} />)}
         </div>
       </div>
       {group.transcriptHtml && (
@@ -188,7 +188,7 @@ function ReviewGroupCard({ group, questions, part, kind }: { group: ReviewGroup;
   );
 }
 
-function ReviewQuestionCard({ question }: { question: ReviewQuestion }) {
+function ReviewQuestionCard({ question, attemptId }: { question: ReviewQuestion; attemptId: string }) {
   const status = question.selectedOptionId === null ? "UNANSWERED" : question.isCorrect ? "CORRECT" : "WRONG";
   return (
     <article id={`review-${question.id}`} className="scroll-mt-24 p-5 sm:p-6">
@@ -223,8 +223,46 @@ function ReviewQuestionCard({ question }: { question: ReviewQuestion }) {
           {question.explanationHtml ? <SafeContentHtml html={question.explanationHtml} compact /> : "Câu này chưa có lời giải chi tiết."}
         </div>
       </div>
+      <QuestionErrorReport attemptId={attemptId} question={question} />
     </article>
   );
+}
+
+function QuestionErrorReport({ attemptId, question }: { attemptId: string; question: ReviewQuestion }) {
+  const [open, setOpen] = useState(false);
+  const [category, setCategory] = useState("WRONG_ANSWER");
+  const [message, setMessage] = useState("");
+  const [sending, setSending] = useState(false);
+  const [sent, setSent] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function submit() {
+    setSending(true);
+    setError(null);
+    try {
+      const response = await apiFetch("/feedback/question-error", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ attemptId, questionId: question.id, questionNumber: question.number, category, message }),
+      });
+      if (!response.ok) throw new Error(await responseMessage(response));
+      setSent(true);
+      setOpen(false);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Không gửi được báo lỗi");
+    } finally {
+      setSending(false);
+    }
+  }
+
+  if (sent) return <p className="mt-4 text-right text-xs font-bold text-emerald-600">✓ Đã gửi báo lỗi câu này</p>;
+  return <div className="mt-4 border-t border-border pt-4 text-right">
+    {!open ? <button onClick={() => setOpen(true)} className="text-xs font-bold text-muted hover:text-danger">⚑ Báo lỗi câu này</button> : <div className="ml-auto max-w-xl rounded-xl border border-border bg-surface-raised p-4 text-left">
+      <div className="grid gap-3 sm:grid-cols-[180px_1fr]"><select value={category} onChange={(event) => setCategory(event.target.value)} className="rounded-lg border border-border bg-surface px-3 py-2 text-sm"><option value="WRONG_ANSWER">Sai đáp án</option><option value="CONTENT_TYPO">Lỗi nội dung/chính tả</option><option value="MISSING_MEDIA">Thiếu hình/passage</option><option value="AUDIO_PROBLEM">Lỗi audio</option><option value="OTHER">Khác</option></select><textarea value={message} onChange={(event) => setMessage(event.target.value)} rows={2} maxLength={2000} placeholder="Mô tả lỗi bạn phát hiện…" className="rounded-lg border border-border bg-surface px-3 py-2 text-sm" /></div>
+      {error && <p className="mt-2 text-xs font-bold text-danger">{error}</p>}
+      <div className="mt-3 flex justify-end gap-2"><button onClick={() => setOpen(false)} className="rounded-lg px-3 py-2 text-xs font-bold text-muted">Hủy</button><button onClick={() => void submit()} disabled={message.trim().length < 5 || sending} className="rounded-lg bg-danger px-3 py-2 text-xs font-black text-white disabled:opacity-40">{sending ? "Đang gửi…" : "Gửi báo lỗi"}</button></div>
+    </div>}
+  </div>;
 }
 
 function SegmentPlayer({ segment }: { segment: ReviewAudioSegment }) {

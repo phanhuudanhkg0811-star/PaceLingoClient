@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { AuthActions } from "@/components/auth-actions";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { SiteFooter } from "@/components/site-footer";
 
 export default function Home() {
   return (
@@ -149,12 +150,7 @@ export default function Home() {
         </div>
       </section>
 
-      <footer className="border-t border-border bg-surface/70">
-        <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-3 px-5 py-7 text-sm text-muted sm:flex-row sm:px-8">
-          <p className="font-bold text-foreground">PaceLingo</p>
-          <p>Luyện TOEIC đúng nhịp, tiến bộ đúng hướng.</p>
-        </div>
-      </footer>
+      <SiteFooter />
     </main>
   );
 }

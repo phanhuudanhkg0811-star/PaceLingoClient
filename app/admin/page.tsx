@@ -81,6 +81,11 @@ export default function AdminPage() {
                 sửa.
               </p>
             </Link>
+            <Link href="/admin/feedback" className="group rounded-3xl border border-border bg-surface p-7 shadow-[0_18px_50px_rgba(var(--shadow),0.08)] transition hover:-translate-y-1 hover:border-accent/50">
+              <span className="grid size-12 place-items-center rounded-2xl bg-accent-soft text-2xl text-accent-strong">✉</span>
+              <h2 className="mt-6 text-xl font-bold group-hover:text-accent">Phản hồi & báo lỗi</h2>
+              <p className="mt-2 leading-7 text-muted">Đọc liên hệ, báo lỗi câu hỏi và đánh dấu nội dung đã xử lý.</p>
+            </Link>
           </div>
 
           <Link
