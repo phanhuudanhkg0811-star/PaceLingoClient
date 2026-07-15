@@ -45,6 +45,13 @@ interface UsageDetails {
   questionAudioSegments: Array<{ id: string; questionId: string; segmentType: string }>;
 }
 
+interface UploadProgress {
+  total: number;
+  completed: number;
+  succeeded: number;
+  failed: number;
+}
+
 export function MediaLibrary() {
   const [items, setItems] = useState<MediaAsset[]>([]);
   const [folders, setFolders] = useState<MediaFolder[]>([]);
@@ -64,6 +71,11 @@ export function MediaLibrary() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [usage, setUsage] = useState<UsageDetails | null>(null);
+  const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
+  const [uploadProgress, setUploadProgress] = useState<UploadProgress | null>(
+    null,
+  );
+  const [uploadNotice, setUploadNotice] = useState<string | null>(null);
 
   const loadMedia = useCallback(async () => {
     setLoading(true);
@@ -109,23 +121,87 @@ export function MediaLibrary() {
   async function upload(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = event.currentTarget;
-    const data = new FormData(form);
-    if (!(data.get("file") instanceof File) || !(data.get("file") as File).size) {
-      setError("Hãy chọn một file ảnh hoặc audio");
+    const fileInput = form.elements.namedItem("file") as HTMLInputElement | null;
+    const files = Array.from(fileInput?.files ?? []).filter(
+      (file) => file.size > 0,
+    );
+    if (!files.length) {
+      setError("Hãy chọn ít nhất một file ảnh hoặc audio");
       return;
     }
+    const values = new FormData(form);
+    const altText = String(values.get("altText") ?? "").trim();
+    const folderId = String(values.get("folderId") ?? "").trim();
     setBusy(true);
     setError(null);
+    setUploadNotice(null);
+    setUploadProgress({
+      total: files.length,
+      completed: 0,
+      succeeded: 0,
+      failed: 0,
+    });
     try {
-      const response = await apiFetch("/admin/media", { method: "POST", body: data });
-      if (!response.ok) throw new Error(await responseMessage(response));
+      const results = await uploadFilesConcurrently(files, 3, async (file) => {
+        try {
+          const data = new FormData();
+          data.set("file", file);
+          if (altText) data.set("altText", altText);
+          if (folderId) data.set("folderId", folderId);
+          const response = await apiFetch("/admin/media", {
+            method: "POST",
+            body: data,
+          });
+          if (!response.ok) throw new Error(await responseMessage(response));
+          setUploadProgress((current) =>
+            current
+              ? {
+                  ...current,
+                  completed: current.completed + 1,
+                  succeeded: current.succeeded + 1,
+                }
+              : current,
+          );
+          return { file, error: null };
+        } catch (reason) {
+          const message =
+            reason instanceof Error ? reason.message : "Upload thất bại";
+          setUploadProgress((current) =>
+            current
+              ? {
+                  ...current,
+                  completed: current.completed + 1,
+                  failed: current.failed + 1,
+                }
+              : current,
+          );
+          return { file, error: message };
+        }
+      });
+      const failures = results.filter((result) => result.error);
+      const successCount = results.length - failures.length;
       form.reset();
+      setSelectedFiles([]);
       setPage(1);
-      await Promise.all([loadMedia(), loadFolders()]);
+      if (successCount > 0) {
+        await Promise.all([loadMedia(), loadFolders()]);
+      }
+      if (failures.length) {
+        const details = failures
+          .slice(0, 5)
+          .map((result) => `${result.file.name}: ${result.error}`)
+          .join("; ");
+        setError(
+          `Đã upload ${successCount}/${results.length} file. File lỗi: ${details}${failures.length > 5 ? ` và ${failures.length - 5} file khác` : ""}`,
+        );
+      } else {
+        setUploadNotice(`Đã upload thành công ${successCount} file lên R2.`);
+      }
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Upload thất bại");
     } finally {
       setBusy(false);
+      setUploadProgress(null);
     }
   }
 
@@ -316,18 +392,65 @@ export function MediaLibrary() {
           </div>
         )}
 
+        {uploadNotice && (
+          <div className="mt-6 flex items-start justify-between gap-4 rounded-2xl border border-emerald-400/30 bg-emerald-400/10 px-5 py-4 text-sm font-semibold text-emerald-700 dark:text-emerald-300">
+            <span>{uploadNotice}</span>
+            <button
+              type="button"
+              onClick={() => setUploadNotice(null)}
+              aria-label="Đóng thông báo"
+            >
+              ×
+            </button>
+          </div>
+        )}
+
         <section className="mt-8 grid gap-6 lg:grid-cols-[360px_1fr]">
           <form
             onSubmit={upload}
             className="h-fit rounded-3xl border border-border bg-surface p-5 shadow-[0_18px_50px_rgba(var(--shadow),0.08)] lg:sticky lg:top-6"
           >
-            <h2 className="text-lg font-bold">Upload tài nguyên</h2>
-            <p className="mt-1 text-sm leading-6 text-muted">JPEG, PNG, WebP, GIF, MP3, WAV, OGG hoặc M4A.</p>
+            <h2 className="text-lg font-bold">Upload nhiều tài nguyên</h2>
+            <p className="mt-1 text-sm leading-6 text-muted">
+              Chọn nhiều JPEG, PNG, WebP, GIF, MP3, WAV, OGG hoặc M4A cùng lúc.
+            </p>
             <label className="mt-5 flex min-h-40 cursor-pointer flex-col items-center justify-center rounded-2xl border border-dashed border-accent/50 bg-accent-soft/60 px-4 text-center transition hover:border-accent">
               <span className="text-3xl text-accent">↑</span>
               <span className="mt-3 text-sm font-bold">Chọn ảnh hoặc audio</span>
-              <input name="file" type="file" accept="image/jpeg,image/png,image/webp,image/gif,audio/mpeg,audio/wav,audio/ogg,audio/mp4" className="mt-3 max-w-full text-xs text-muted" />
+              <span className="mt-1 text-xs text-muted">
+                Giữ Ctrl/Shift để chọn hàng loạt
+              </span>
+              <input
+                name="file"
+                type="file"
+                multiple
+                accept="image/jpeg,image/png,image/webp,image/gif,audio/mpeg,audio/wav,audio/ogg,audio/mp4"
+                onChange={(event) =>
+                  setSelectedFiles(Array.from(event.target.files ?? []))
+                }
+                className="mt-3 max-w-full text-xs text-muted"
+              />
             </label>
+            {selectedFiles.length > 0 && (
+              <div className="mt-3 rounded-xl border border-border bg-background p-3 text-xs">
+                <div className="flex items-center justify-between gap-3 font-bold">
+                  <span>{selectedFiles.length} file đã chọn</span>
+                  <span className="text-muted">
+                    {formatBatchBytes(selectedFiles)}
+                  </span>
+                </div>
+                <ul className="mt-2 space-y-1 text-muted">
+                  {selectedFiles.slice(0, 5).map((file) => (
+                    <li key={`${file.name}-${file.size}`} className="truncate">
+                      {file.name}
+                    </li>
+                  ))}
+                  {selectedFiles.length > 5 && (
+                    <li>…và {selectedFiles.length - 5} file khác</li>
+                  )}
+                </ul>
+              </div>
+            )}
             <label className="mt-5 block text-sm font-semibold">
               Alt text / mô tả
               <input
@@ -361,8 +484,27 @@ export function MediaLibrary() {
               disabled={busy || !storageConfigured}
               className="mt-5 w-full rounded-xl bg-accent px-4 py-3 font-bold text-white transition hover:bg-accent-strong disabled:cursor-not-allowed disabled:opacity-50 dark:text-slate-950"
             >
-              {busy ? "Đang xử lý…" : "Upload lên R2"}
+              {uploadProgress
+                ? `Đang upload ${uploadProgress.completed}/${uploadProgress.total}…`
+                : selectedFiles.length > 1
+                  ? `Upload ${selectedFiles.length} file lên R2`
+                  : "Upload lên R2"}
             </button>
+            {uploadProgress && (
+              <div className="mt-3" aria-live="polite">
+                <div className="h-2 overflow-hidden rounded-full bg-surface-raised">
+                  <div
+                    className="h-full rounded-full bg-accent transition-[width] duration-300"
+                    style={{
+                      width: `${(uploadProgress.completed / uploadProgress.total) * 100}%`,
+                    }}
+                  />
+                </div>
+                <p className="mt-2 text-center text-xs text-muted">
+                  {uploadProgress.succeeded} thành công · {uploadProgress.failed} lỗi
+                </p>
+              </div>
+            )}
           </form>
 
           <div>
@@ -667,6 +809,33 @@ function formatDuration(value: number | null) {
   if (!value) return "—";
   const seconds = Math.round(value / 1000);
   return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, "0")}`;
+}
+
+function formatBatchBytes(files: File[]) {
+  return formatBytes(
+    String(files.reduce((total, file) => total + file.size, 0)),
+  );
+}
+
+async function uploadFilesConcurrently<Result>(
+  files: File[],
+  concurrency: number,
+  uploadFile: (file: File) => Promise<Result>,
+) {
+  const results = new Array<Result>(files.length);
+  let nextIndex = 0;
+  const workers = Array.from(
+    { length: Math.min(concurrency, files.length) },
+    async () => {
+      while (nextIndex < files.length) {
+        const index = nextIndex;
+        nextIndex += 1;
+        results[index] = await uploadFile(files[index]);
+      }
+    },
+  );
+  await Promise.all(workers);
+  return results;
 }
 
 async function responseMessage(response: Response) {

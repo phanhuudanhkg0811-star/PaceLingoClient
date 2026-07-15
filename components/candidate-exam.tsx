@@ -27,6 +27,16 @@ import {
   deriveTimelineState,
   listeningDurationMs,
 } from "@/lib/timeline-runtime";
+import {
+  buildSegmentedListeningSteps,
+  hasSegmentedListening,
+  segmentedStartIndex,
+} from "@/lib/segmented-listening";
+import {
+  LISTENING_INTRO,
+  READING_INTRO,
+  partDirection,
+} from "@/lib/toeic-directions";
 
 type Stage =
   "loading" | "ready" | "listening" | "reading" | "submitted" | "error";
@@ -42,6 +52,9 @@ export function CandidateExam({ testId }: { testId: string }) {
   const [activeQuestionId, setActiveQuestionId] = useState<string | null>(null);
   const [remainingMs, setRemainingMs] = useState(0);
   const [audioTestPlaying, setAudioTestPlaying] = useState(false);
+  const [segmentedStartQuestionId, setSegmentedStartQuestionId] = useState<
+    string | null
+  >(null);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [cacheSource, setCacheSource] = useState<"network" | "cache" | null>(
@@ -192,8 +205,22 @@ export function CandidateExam({ testId }: { testId: string }) {
 
       const listeningEnd = listeningDurationMs(payload);
       const serverNow = Date.now() + serverOffsetRef.current;
+      const hasListening = payload.sections.some(
+        (section) => section.kind === "LISTENING",
+      );
+      if (!hasListening || nextAttempt.currentSection === "READING") {
+        setStage("reading");
+        return;
+      }
+      if (hasSegmentedListening(payload)) {
+        setSegmentedStartQuestionId(nextAttempt.currentQuestionId);
+        setStage("listening");
+        return;
+      }
+      if (!payload.test.fullListeningAudio) {
+        throw new Error("Đề Listening chưa được gắn audio cho từng câu/group");
+      }
       if (
-        !payload.test.fullListeningAudio ||
         listeningEnd === 0 ||
         !nextAttempt.listeningEndsAt ||
         serverNow >= new Date(nextAttempt.listeningEndsAt).getTime()
@@ -582,14 +609,37 @@ export function CandidateExam({ testId }: { testId: string }) {
         />
       )}
       {stage === "listening" && (
-        <ListeningPlayer
-          payload={payload}
-          positionMs={positionMs}
-          remainingMs={remainingMs}
-          answers={answers}
-          setAnswer={setAnswer}
-          onActiveQuestion={onListeningActive}
-        />
+        hasSegmentedListening(payload) ? (
+          <SegmentedListeningPlayer
+            payload={payload}
+            remainingMs={remainingMs}
+            answers={answers}
+            setAnswer={setAnswer}
+            onActiveQuestion={onListeningActive}
+            initialQuestionId={segmentedStartQuestionId}
+            onComplete={() => {
+              if (
+                payload.sections.some(
+                  (section) => section.kind === "READING",
+                )
+              ) {
+                setStage("reading");
+                saveProgress("READING", null);
+              } else {
+                void submitAttempt();
+              }
+            }}
+          />
+        ) : (
+          <ListeningPlayer
+            payload={payload}
+            positionMs={positionMs}
+            remainingMs={remainingMs}
+            answers={answers}
+            setAnswer={setAnswer}
+            onActiveQuestion={onListeningActive}
+          />
+        )
       )}
       {stage === "reading" && (
         <ReadingPlayer
@@ -1276,6 +1326,214 @@ function legacyAttemptResult(
   };
 }
 
+function SegmentedListeningPlayer({
+  payload,
+  remainingMs,
+  answers,
+  setAnswer,
+  onActiveQuestion,
+  initialQuestionId,
+  onComplete,
+}: {
+  payload: CandidatePayload;
+  remainingMs: number;
+  answers: Record<string, string>;
+  setAnswer: (questionId: string, optionId: string) => void;
+  onActiveQuestion: (questionId: string | null) => void;
+  initialQuestionId: string | null;
+  onComplete: () => void;
+}) {
+  const steps = useMemo(
+    () => buildSegmentedListeningSteps(payload),
+    [payload],
+  );
+  const [stepIndex, setStepIndex] = useState(() =>
+    segmentedStartIndex(steps, initialQuestionId),
+  );
+  const [playBlocked, setPlayBlocked] = useState(false);
+  const audioRef = useRef<HTMLAudioElement>(null);
+  const step = steps[stepIndex];
+  const group = step?.type === "GROUP" ? step.group : null;
+  const questions = useMemo(() => group?.questions ?? [], [group]);
+  const shortcutQuestion = questions[0];
+  const totalQuestionCount = countQuestions(payload);
+  const answeredCount = Object.keys(answers).length;
+  const visibleStimuli =
+    group?.stimuli.filter((stimulus) => stimulus.type !== "AUDIO") ?? [];
+
+  const advance = useCallback(() => {
+    setPlayBlocked(false);
+    if (stepIndex >= steps.length - 1) {
+      onComplete();
+      return;
+    }
+    setStepIndex(stepIndex + 1);
+  }, [onComplete, stepIndex, steps.length]);
+
+  const playCurrent = useCallback(async () => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    try {
+      setPlayBlocked(false);
+      await audio.play();
+    } catch {
+      setPlayBlocked(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    const questionId = questions[0]?.id ?? null;
+    onActiveQuestion(questionId);
+  }, [onActiveQuestion, questions]);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (isShortcutBlocked(event) || step?.type !== "GROUP") return;
+      if (event.code === "Space") {
+        event.preventDefault();
+        return;
+      }
+      const optionIndex = answerShortcutIndex(event.key);
+      if (optionIndex === null) return;
+      const option = shortcutQuestion?.options[optionIndex];
+      if (!shortcutQuestion || !option) return;
+      event.preventDefault();
+      setAnswer(shortcutQuestion.id, option.id);
+      onActiveQuestion(shortcutQuestion.id);
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [onActiveQuestion, setAnswer, shortcutQuestion, step?.type]);
+
+  if (!step) {
+    return <ExamMessage title="Đề Listening không có audio từng câu/group" />;
+  }
+
+  const directionScreen =
+    step.type === "INTRO" ||
+    step.type === "DIRECTION" ||
+    step.type === "EXAMPLE";
+
+  return (
+    <ExamShell
+      title={
+        directionScreen
+          ? "Playing directions..."
+          : `Listening: ${step.section.part?.replace("PART_", "Part ") ?? "Listening"}`
+      }
+      progress={`${answeredCount}/${totalQuestionCount}`}
+      timer={formatClock(remainingMs)}
+    >
+      {step.audio && (
+        <audio
+          key={step.key}
+          ref={audioRef}
+          src={step.audio.url}
+          preload="auto"
+          onCanPlay={() => void playCurrent()}
+          onEnded={advance}
+          onError={() => setPlayBlocked(true)}
+          className="hidden"
+        />
+      )}
+
+      {directionScreen ? (
+        <div className="grid min-h-[calc(100vh-64px)] place-items-center bg-[#f4f6f8] px-5 py-10">
+          <section className="w-full max-w-4xl rounded-2xl border border-slate-200 bg-white px-7 py-10 shadow-xl shadow-slate-950/10 sm:px-12 sm:py-14">
+            <p className="text-center text-xs font-black uppercase tracking-[0.24em] text-sky-600">
+              {step.type === "INTRO"
+                ? "Listening directions"
+                : step.type === "EXAMPLE"
+                  ? "Example"
+                  : "Directions"}
+            </p>
+            <h2 className="mt-5 text-center text-3xl font-black text-[#123f70] sm:text-4xl">
+              {step.type === "INTRO"
+                ? "LISTENING TEST"
+                : step.type === "EXAMPLE"
+                  ? `${step.section.part?.replace("PART_", "PART ")} · EXAMPLE`
+                  : step.section.part?.replace("PART_", "PART ")}
+            </h2>
+            <div className="mx-auto mt-8 max-w-3xl text-lg leading-8 text-slate-700 sm:text-xl sm:leading-9">
+              {step.type === "INTRO" ? (
+                <p>{LISTENING_INTRO}</p>
+              ) : step.type === "EXAMPLE" &&
+                step.section.direction?.exampleHtml ? (
+                <SafeHtml html={step.section.direction.exampleHtml} />
+              ) : (
+                <p>
+                  {candidateDirection(step.section)}
+                </p>
+              )}
+            </div>
+            <div className="mt-9 flex justify-center">
+              {step.audio ? (
+                <button
+                  type="button"
+                  onClick={playBlocked ? () => void playCurrent() : advance}
+                  className="rounded-xl border border-[#123f70]/30 bg-[#123f70] px-6 py-3 text-sm font-bold text-white shadow-sm transition hover:bg-[#0c315a]"
+                >
+                  {playBlocked ? "Phát direction" : "Bỏ qua phần này"}
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={advance}
+                  className="rounded-xl bg-[#1677c8] px-7 py-3 text-sm font-bold text-white shadow-sm transition hover:bg-[#0f65ab]"
+                >
+                  {step.type === "INTRO"
+                    ? "Tiếp tục"
+                    : step.type === "EXAMPLE"
+                      ? "Bắt đầu"
+                      : `Bắt đầu ${step.section.part?.replace("PART_", "Part ")}`}
+                </button>
+              )}
+            </div>
+          </section>
+        </div>
+      ) : group ? (
+        <div className="grid min-h-[calc(100vh-64px)] place-items-center bg-[#f2f3f5] p-5">
+          <section className="w-full max-w-5xl rounded-sm border border-slate-300 bg-white p-6 shadow-sm">
+            <div className="grid gap-7 lg:grid-cols-[minmax(280px,0.9fr)_1.1fr]">
+              <div>
+                <p className="mb-5 text-[17px] font-bold leading-7 text-[#124b78]">
+                  {listeningQuestionInstruction(step.section.part)}
+                </p>
+                {visibleStimuli.map((stimulus) => (
+                  <Stimulus key={stimulus.id} stimulus={stimulus} />
+                ))}
+                {visibleStimuli.length === 0 &&
+                  step.section.part !== "PART_1" &&
+                  step.section.part !== "PART_2" && (
+                    <div className="grid min-h-56 place-items-center rounded-xl bg-slate-50 text-center text-slate-500">
+                      <p>Listen to the audio and select the best answer.</p>
+                    </div>
+                  )}
+                {playBlocked && (
+                  <button
+                    type="button"
+                    onClick={() => void playCurrent()}
+                    className="mt-5 rounded-xl bg-[#1677c8] px-5 py-3 text-sm font-bold text-white"
+                  >
+                    Phát audio câu hỏi
+                  </button>
+                )}
+              </div>
+              <QuestionList
+                questions={questions}
+                answers={answers}
+                setAnswer={setAnswer}
+                onActivate={onActiveQuestion}
+                part={step.section.part}
+              />
+            </div>
+          </section>
+        </div>
+      ) : null}
+    </ExamShell>
+  );
+}
+
 function ListeningPlayer({
   payload,
   positionMs,
@@ -1365,12 +1623,12 @@ function ListeningPlayer({
                   ? "LISTENING TEST"
                   : section?.part?.replace("PART_", "Part ")}
               </h2>
-              <p className="mt-5 text-lg leading-8 text-slate-700">
-                {isListeningIntro
-                  ? "In the Listening test, you will demonstrate how well you understand spoken English. The Listening section lasts approximately 45 minutes and contains four parts. Directions are provided for each part. Listen carefully and select the best answer for every question. The audio is played only once and cannot be replayed."
-                  : (section?.direction?.text ??
-                    "Listen carefully and select the best answer.")}
-              </p>
+              <div className="mt-5 space-y-5 text-lg leading-8 text-slate-700">
+                {isListeningIntro && <p>{LISTENING_INTRO}</p>}
+                <p>
+                  {candidateDirection(section)}
+                </p>
+              </div>
               {isExample && section?.direction?.exampleHtml && (
                 <SafeHtml html={section.direction.exampleHtml} />
               )}
@@ -1469,6 +1727,20 @@ function ReadingPlayer({
   const [catalogMode, setCatalogMode] = useState<"navigator" | "submit" | null>(
     null,
   );
+  const fullTestDirections = payload.test.type === "FULL_TEST";
+  const [directionStage, setDirectionStage] = useState<"INTRO" | string | null>(
+    fullTestDirections && !initialQuestionId ? "INTRO" : null,
+  );
+  const seenDirectionIds = useRef(
+    new Set(
+      initialQuestionId && pages[initialPageIndex]?.section.id
+        ? [pages[initialPageIndex].section.id]
+        : [],
+    ),
+  );
+  const pendingPage = useRef<{ index: number; questionId?: string } | null>(
+    null,
+  );
   const lastQuestionNumber = Math.max(
     payload.test.totalQuestions,
     ...pages.flatMap((item) =>
@@ -1481,7 +1753,7 @@ function ReadingPlayer({
   const activeQuestion =
     page?.questions.find((question) => question.id === activeQuestionId) ??
     page?.questions[0];
-  const go = useCallback(
+  const applyGo = useCallback(
     (index: number, questionId?: string) => {
       const next = pages[index];
       if (!next) return;
@@ -1493,14 +1765,44 @@ function ReadingPlayer({
     },
     [onActiveQuestion, pages],
   );
+  const go = useCallback(
+    (index: number, questionId?: string) => {
+      const next = pages[index];
+      if (!next) return;
+      if (
+        fullTestDirections &&
+        !seenDirectionIds.current.has(next.section.id)
+      ) {
+        pendingPage.current = { index, questionId };
+        setDirectionStage(next.section.id);
+        setCatalogMode(null);
+        return;
+      }
+      applyGo(index, questionId);
+    },
+    [applyGo, fullTestDirections, pages],
+  );
+
+  const continueDirection = useCallback(() => {
+    if (directionStage === "INTRO") {
+      setDirectionStage(page?.section.id ?? null);
+      return;
+    }
+    if (directionStage) seenDirectionIds.current.add(directionStage);
+    setDirectionStage(null);
+    const pending = pendingPage.current;
+    pendingPage.current = null;
+    if (pending) applyGo(pending.index, pending.questionId);
+  }, [applyGo, directionStage, page?.section.id]);
 
   useEffect(() => {
-    if (activeQuestion?.id) onActiveQuestion(activeQuestion.id);
-  }, [activeQuestion?.id, onActiveQuestion]);
+    if (!directionStage && activeQuestion?.id)
+      onActiveQuestion(activeQuestion.id);
+  }, [activeQuestion?.id, directionStage, onActiveQuestion]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      if (catalogMode || isShortcutBlocked(event)) return;
+      if (catalogMode || directionStage || isShortcutBlocked(event)) return;
       const optionIndex = answerShortcutIndex(event.key);
       if (optionIndex !== null) {
         const option = activeQuestion?.options[optionIndex];
@@ -1527,6 +1829,7 @@ function ReadingPlayer({
   }, [
     activeQuestion,
     catalogMode,
+    directionStage,
     go,
     onActiveQuestion,
     pageIndex,
@@ -1537,6 +1840,50 @@ function ReadingPlayer({
 
   if (!page) return <ExamMessage title="Đề không có section Reading" />;
   const range = `${page.questions[0]?.number ?? "—"}${page.questions.length > 1 ? `–${page.questions.at(-1)?.number}` : ""}`;
+
+  if (directionStage) {
+    const directionSection =
+      directionStage === "INTRO"
+        ? null
+        : payload.sections.find((section) => section.id === directionStage) ??
+          page.section;
+    return (
+      <ExamShell
+        title="Reading directions"
+        progress={`${answeredCount}/${totalQuestionCount}`}
+        timer={formatClock(remainingMs)}
+      >
+        <div className="grid min-h-[calc(100vh-64px)] place-items-center bg-[#f4f6f8] px-5 py-10">
+          <section className="w-full max-w-4xl rounded-2xl border border-slate-200 bg-white px-7 py-10 shadow-xl shadow-slate-950/10 sm:px-12 sm:py-14">
+            <p className="text-center text-xs font-black uppercase tracking-[0.24em] text-sky-600">
+              Directions
+            </p>
+            <h2 className="mt-5 text-center text-3xl font-black text-[#123f70] sm:text-4xl">
+              {directionStage === "INTRO"
+                ? "READING TEST"
+                : directionSection?.part?.replace("PART_", "PART ")}
+            </h2>
+            <p className="mx-auto mt-8 max-w-3xl text-lg leading-8 text-slate-700 sm:text-xl sm:leading-9">
+              {directionStage === "INTRO"
+                ? READING_INTRO
+                : candidateDirection(directionSection)}
+            </p>
+            <div className="mt-9 flex justify-center">
+              <button
+                type="button"
+                onClick={continueDirection}
+                className="rounded-xl bg-[#1677c8] px-7 py-3 text-sm font-bold text-white shadow-sm transition hover:bg-[#0f65ab]"
+              >
+                {directionStage === "INTRO"
+                  ? "Tiếp tục"
+                  : `Bắt đầu ${directionSection?.part?.replace("PART_", "Part ")}`}
+              </button>
+            </div>
+          </section>
+        </div>
+      </ExamShell>
+    );
+  }
 
   return (
     <ExamShell
@@ -1851,6 +2198,14 @@ function ExamShell({
       {children}
     </div>
   );
+}
+
+function candidateDirection(section: CandidateSection | null | undefined) {
+  if (!section) return "";
+  if (section.directionMode === "CUSTOM" && section.direction?.text) {
+    return section.direction.text;
+  }
+  return partDirection(section.part);
 }
 
 function listeningQuestionInstruction(

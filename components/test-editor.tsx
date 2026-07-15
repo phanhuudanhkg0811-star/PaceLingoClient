@@ -489,7 +489,7 @@ function MetadataForm({
           />
         </label>
         <label className="text-[10px] text-muted">
-          Full audio
+          Full audio (tùy chọn)
           <select
             value={audioId}
             disabled={!editable}
@@ -2203,16 +2203,18 @@ function ListeningPreviewInspector({
             {part?.replace("PART_", "Part ") ?? "Listening"}
           </p>
           <p className="mt-1 text-xs leading-5 text-slate-600 dark:text-slate-300">
-            Player bên dưới chỉ dành cho admin kiểm tra; badge cho biết group đã
-            có transcript hay chưa. Khi thi thật, thí sinh chỉ nghe full audio
-            và không thấy transcript hay nút điều khiển.
+            Player bên dưới chỉ dành cho admin kiểm tra. Candidate runtime ưu
+            tiên audio riêng của từng câu/group; transcript và nút điều khiển
+            không xuất hiện khi thi.
           </p>
         </div>
         <div className="flex flex-wrap gap-2 text-[11px] font-bold">
           <span
             className={`rounded-full px-3 py-1 ${test.fullListeningAudio ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}`}
           >
-            {test.fullListeningAudio ? "Đã gắn full audio" : "Thiếu full audio"}
+            {test.fullListeningAudio
+              ? "Có full audio dự phòng"
+              : "Dùng audio từng group"}
           </span>
           <span
             className={`rounded-full px-3 py-1 ${group.transcriptHtml ? "bg-emerald-100 text-emerald-700" : "bg-slate-200 text-slate-600"}`}
@@ -2247,8 +2249,8 @@ function ListeningPreviewInspector({
           </div>
         ) : (
           <div className="rounded-xl border border-dashed border-slate-300 bg-white/60 p-3 text-xs text-slate-500 dark:bg-slate-950/30">
-            Nhóm này không có audio riêng; candidate runtime sẽ dùng full audio
-            và timeline.
+            Nhóm này chưa có audio riêng. Hãy gắn audio cho group trước khi
+            publish; full audio chỉ là chế độ dự phòng.
           </div>
         )}
       </div>
