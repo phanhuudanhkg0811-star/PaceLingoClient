@@ -96,6 +96,7 @@ export interface CandidatePayload {
     durationMinutes: number;
     totalQuestions: number;
     fullListeningAudio: CandidateMedia | null;
+    listeningIntroAudio: CandidateMedia | null;
   };
   sections: CandidateSection[];
   timeline: CandidateTimelineEvent[];
@@ -172,6 +173,7 @@ export interface CandidateAttempt {
   answers: AttemptAnswer[];
   timings: AttemptTiming[];
   serverNow: string;
+  resumed?: boolean;
 }
 
 export interface AttemptResult {
@@ -244,6 +246,8 @@ export function parseCandidatePayload(value: unknown): CandidatePayload {
     if (section.kind !== "LISTENING" && section.kind !== "READING") {
       throw new Error(`sections.${sectionIndex}.kind is invalid`);
     }
+    const hidesSpokenChoices =
+      section.part === "PART_1" || section.part === "PART_2";
     const groups = array(
       section.questionGroups,
       `sections.${sectionIndex}.questionGroups`,
@@ -266,7 +270,11 @@ export function parseCandidatePayload(value: unknown): CandidatePayload {
           const option = record(rawOption, "option");
           string(option.id, "option.id");
           string(option.label, "option.label");
-          string(option.contentHtml, "option.contentHtml");
+          if (hidesSpokenChoices) {
+            stringAllowEmpty(option.contentHtml, "option.contentHtml");
+          } else {
+            string(option.contentHtml, "option.contentHtml");
+          }
           if ("isCorrect" in option) {
             throw new Error("Candidate payload exposes isCorrect");
           }
@@ -303,6 +311,12 @@ function array(value: unknown, path: string): unknown[] {
 function string(value: unknown, path: string) {
   if (typeof value !== "string" || !value) {
     throw new Error(`${path} must be a non-empty string`);
+  }
+}
+
+function stringAllowEmpty(value: unknown, path: string) {
+  if (typeof value !== "string") {
+    throw new Error(`${path} must be a string`);
   }
 }
 

@@ -12,6 +12,7 @@ export interface MediaAsset {
   width: number | null;
   height: number | null;
   altText: string | null;
+  folder?: { id: string; name: string } | null;
 }
 
 export interface Option {
@@ -106,6 +107,8 @@ export interface TestTree {
   totalQuestions: number;
   fullListeningAudioId: string | null;
   fullListeningAudio: MediaAsset | null;
+  listeningIntroAudioId: string | null;
+  listeningIntroAudio: MediaAsset | null;
   sections: TestSection[];
   timelineEvents: TimelineEvent[];
   versions: Array<{

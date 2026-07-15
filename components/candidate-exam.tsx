@@ -34,6 +34,7 @@ import {
 } from "@/lib/segmented-listening";
 import {
   LISTENING_INTRO,
+  PART_1_EXAMPLE_TEXT,
   READING_INTRO,
   partDirection,
 } from "@/lib/toeic-directions";
@@ -56,6 +57,8 @@ export function CandidateExam({ testId }: { testId: string }) {
     string | null
   >(null);
   const [submitting, setSubmitting] = useState(false);
+  const [starting, setStarting] = useState(false);
+  const [resumeChoiceOpen, setResumeChoiceOpen] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [cacheSource, setCacheSource] = useState<"network" | "cache" | null>(
     null,
@@ -73,6 +76,7 @@ export function CandidateExam({ testId }: { testId: string }) {
   } | null>(null);
   const serverOffsetRef = useRef(0);
   const flushPromiseRef = useRef<Promise<void> | null>(null);
+  const resumableAttemptIdRef = useRef<string | null>(null);
 
   const playAudioTest = useCallback(() => {
     if (audioTestPlaying) return;
@@ -134,17 +138,39 @@ export function CandidateExam({ testId }: { testId: string }) {
     };
   }, [testId]);
 
-  const startOrResume = useCallback(async () => {
+  const startOrResume = useCallback(async (
+    mode: "ask" | "continue" | "restart" = "ask",
+  ) => {
     if (!payload) return;
     setError(null);
+    setStarting(true);
     try {
       const response = await apiFetch(`/tests/${testId}/attempts`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: "{}",
+        body: JSON.stringify({ restart: mode === "restart" }),
       });
       if (!response.ok) throw new Error(await responseMessage(response));
       const nextAttempt = (await response.json()) as CandidateAttempt;
+      if (mode === "ask" && nextAttempt.resumed) {
+        resumableAttemptIdRef.current = nextAttempt.id;
+        setResumeChoiceOpen(true);
+        return;
+      }
+      if (mode === "restart") {
+        const previousAttemptId = resumableAttemptIdRef.current;
+        if (previousAttemptId) await deleteAttemptCache(previousAttemptId);
+        answerRecordsRef.current = {};
+        timingRecordsRef.current = {};
+        pendingAnswersRef.current = {};
+        pendingTimingsRef.current = {};
+        setAnswers({});
+        setFlags([]);
+        setActiveQuestionId(null);
+        setSegmentedStartQuestionId(null);
+      }
+      resumableAttemptIdRef.current = null;
+      setResumeChoiceOpen(false);
       attemptRef.current = nextAttempt;
       setAttempt(nextAttempt);
       serverOffsetRef.current =
@@ -247,6 +273,8 @@ export function CandidateExam({ testId }: { testId: string }) {
         reason instanceof Error ? reason.message : "Không thể bắt đầu bài thi",
       );
       setStage("ready");
+    } finally {
+      setStarting(false);
     }
   }, [payload, testId]);
 
@@ -604,8 +632,9 @@ export function CandidateExam({ testId }: { testId: string }) {
           cached={cacheSource === "cache"}
           audioTestPlaying={audioTestPlaying}
           error={error}
+          starting={starting}
           onAudioTest={playAudioTest}
-          onStart={() => void startOrResume()}
+          onStart={() => void startOrResume("ask")}
         />
       )}
       {stage === "listening" && (
@@ -670,6 +699,14 @@ export function CandidateExam({ testId }: { testId: string }) {
           </div>
         </div>
       )}
+      {resumeChoiceOpen && (
+        <ResumeAttemptDialog
+          busy={starting}
+          onContinue={() => void startOrResume("continue")}
+          onRestart={() => void startOrResume("restart")}
+          onClose={() => setResumeChoiceOpen(false)}
+        />
+      )}
     </main>
   );
 }
@@ -679,6 +716,7 @@ function StartScreen({
   cached,
   audioTestPlaying,
   error,
+  starting,
   onAudioTest,
   onStart,
 }: {
@@ -686,6 +724,7 @@ function StartScreen({
   cached: boolean;
   audioTestPlaying: boolean;
   error: string | null;
+  starting: boolean;
   onAudioTest: () => void;
   onStart: () => void;
 }) {
@@ -784,10 +823,10 @@ function StartScreen({
             )}
             <button
               onClick={onStart}
-              disabled={audioTestPlaying}
+              disabled={audioTestPlaying || starting}
               className="mt-6 w-full rounded-xl bg-gradient-to-r from-[#0b4f8a] to-[#1677c8] px-5 py-4 font-extrabold text-white shadow-lg shadow-blue-900/15 transition hover:-translate-y-0.5 disabled:cursor-wait disabled:opacity-60"
             >
-              Bắt đầu / tiếp tục bài thi
+              {starting ? "Đang kiểm tra lượt thi…" : "Bắt đầu bài thi"}
             </button>
             <Link
               href="/tests"
@@ -796,6 +835,75 @@ function StartScreen({
               ← Quay lại danh sách
             </Link>
           </aside>
+        </div>
+      </section>
+    </div>
+  );
+}
+
+function ResumeAttemptDialog({
+  busy,
+  onContinue,
+  onRestart,
+  onClose,
+}: {
+  busy: boolean;
+  onContinue: () => void;
+  onRestart: () => void;
+  onClose: () => void;
+}) {
+  return (
+    <div
+      className="fixed inset-0 z-[80] grid place-items-center bg-[#03152f]/65 p-5 backdrop-blur-sm"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="resume-attempt-title"
+    >
+      <section className="w-full max-w-lg overflow-hidden rounded-2xl border border-blue-100 bg-white shadow-2xl shadow-slate-950/30">
+        <header className="bg-[#061f47] px-6 py-5 text-white">
+          <p className="text-[11px] font-black uppercase tracking-[0.2em] text-sky-300">
+            Lượt thi chưa hoàn thành
+          </p>
+          <h2 id="resume-attempt-title" className="mt-2 text-2xl font-black">
+            Bạn muốn tiếp tục hay làm lại?
+          </h2>
+        </header>
+        <div className="p-6">
+          <p className="text-sm leading-6 text-slate-600">
+            Hệ thống tìm thấy một lượt thi đang làm dở. Bạn có thể tiếp tục với
+            thời gian và đáp án hiện tại, hoặc hủy lượt đó để bắt đầu lại từ câu
+            đầu tiên.
+          </p>
+          <div className="mt-6 grid gap-3 sm:grid-cols-2">
+            <button
+              type="button"
+              onClick={onContinue}
+              disabled={busy}
+              className="rounded-xl bg-[#1677c8] px-5 py-4 text-sm font-extrabold text-white shadow-sm transition hover:bg-[#0f65ab] disabled:cursor-wait disabled:opacity-60"
+            >
+              Tiếp tục lượt thi
+            </button>
+            <button
+              type="button"
+              onClick={onRestart}
+              disabled={busy}
+              className="rounded-xl border border-red-200 bg-red-50 px-5 py-4 text-sm font-extrabold text-red-700 transition hover:bg-red-100 disabled:cursor-wait disabled:opacity-60"
+            >
+              Làm lại từ đầu
+            </button>
+          </div>
+          <p className="mt-4 text-xs leading-5 text-red-600">
+            Làm lại từ đầu sẽ hủy lượt thi cũ và không thể khôi phục đáp án của
+            lượt đó.
+          </p>
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={busy}
+            className="mt-5 w-full text-center text-sm font-semibold text-slate-500 hover:text-[#0b5fa5] disabled:opacity-50"
+          >
+            Để sau
+          </button>
         </div>
       </section>
     </div>
@@ -812,9 +920,17 @@ function ResultScreen({
   const [retrying, setRetrying] = useState(false);
   const [retryError, setRetryError] = useState<string | null>(null);
   const result = attempt.result ?? legacyAttemptResult(payload, attempt);
-  const scoreMaximum =
+  const hasConvertedScore =
+    result.score.hasConversion && result.score.totalScaled !== null;
+  const scoreValue = hasConvertedScore
+    ? (result.score.totalScaled ?? 0)
+    : result.correctCount * 5;
+  const convertedMaximum =
     (result.score.listening.total > 0 ? 495 : 0) +
     (result.score.reading.total > 0 ? 495 : 0);
+  const scoreMaximum = hasConvertedScore
+    ? convertedMaximum
+    : result.questionCount * 5;
 
   async function startRetry() {
     setRetrying(true);
@@ -867,39 +983,26 @@ function ResultScreen({
 
             <section className="mx-auto mt-7 max-w-2xl rounded-2xl border border-blue-200 bg-white px-6 py-6 shadow-[0_18px_60px_rgba(18,73,126,0.12)] sm:px-10">
               <p className="text-center text-sm font-bold text-slate-500">
-                {result.score.hasConversion
-                  ? "Điểm quy đổi tham khảo"
-                  : "Tổng số câu đúng"}
+                {hasConvertedScore
+                  ? "Điểm TOEIC quy đổi"
+                  : "Điểm TOEIC ước tính"}
               </p>
               <p className="mt-1 text-center text-5xl font-black text-[#075fa8]">
-                {result.score.hasConversion
-                  ? result.score.totalScaled
-                  : result.correctCount}
+                {scoreValue}
                 <span className="ml-1 text-base font-bold text-slate-400">
-                  /
-                  {result.score.hasConversion
-                    ? scoreMaximum
-                    : result.questionCount}
+                  /{scoreMaximum}
                 </span>
               </p>
               <ScoreRail
-                score={
-                  result.score.hasConversion
-                    ? (result.score.totalScaled ?? 0)
-                    : result.correctCount
-                }
+                score={scoreValue}
                 minimum={0}
-                maximum={
-                  result.score.hasConversion
-                    ? scoreMaximum
-                    : result.questionCount
-                }
+                maximum={scoreMaximum}
                 color="#1677c8"
               />
               <p className="mt-5 text-center text-xs leading-5 text-slate-500">
-                {result.score.hasConversion
+                {hasConvertedScore
                   ? `Dùng bảng quy đổi “${result.score.profile?.name ?? "đã cấu hình"}”. Đây là điểm tham khảo, không phải chứng chỉ TOEIC chính thức.`
-                  : "Đề chưa có bảng quy đổi phù hợp nên hệ thống chỉ hiển thị raw score, không suy điểm TOEIC bằng tỷ lệ phần trăm."}
+                  : "Điểm ước tính = số câu đúng × 5. Đây là điểm luyện tập, không phải bảng quy đổi TOEIC chính thức."}
               </p>
             </section>
 
@@ -935,6 +1038,7 @@ function ResultScreen({
                   section={result.score.listening}
                   accent="#1677c8"
                   tint="#dceeff"
+                  estimated={!hasConvertedScore}
                 />
               )}
               {result.score.reading.total > 0 && (
@@ -943,6 +1047,7 @@ function ResultScreen({
                   section={result.score.reading}
                   accent="#526dcc"
                   tint="#e9efff"
+                  estimated={!hasConvertedScore}
                 />
               )}
             </div>
@@ -1014,14 +1119,18 @@ function ResultSectionCard({
   section,
   accent,
   tint,
+  estimated,
 }: {
   title: string;
   section: { correct: number; total: number; scaled: number | null };
   accent: string;
   tint: string;
+  estimated: boolean;
 }) {
   const percentage =
     section.total > 0 ? Math.round((section.correct / section.total) * 100) : 0;
+  const displayScore = section.scaled ?? section.correct * 5;
+  const displayMaximum = section.scaled !== null ? 495 : section.total * 5;
   return (
     <article className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
       <header
@@ -1043,26 +1152,23 @@ function ResultSectionCard({
       </header>
       <div className="px-6 py-5">
         <p className="text-center text-sm font-semibold text-slate-500">
-          Raw score
+          {estimated ? "Điểm TOEIC ước tính" : "Điểm TOEIC quy đổi"}
         </p>
         <p
           className="mt-1 text-center text-3xl font-black"
           style={{ color: accent }}
         >
-          {section.correct}
-          <span className="ml-1 text-sm text-slate-400">/{section.total}</span>
+          {displayScore}
+          <span className="ml-1 text-sm text-slate-400">
+            /{displayMaximum}
+          </span>
         </p>
         <ScoreRail
-          score={section.correct}
+          score={displayScore}
           minimum={0}
-          maximum={section.total}
+          maximum={displayMaximum}
           color={accent}
         />
-        {section.scaled !== null && (
-          <p className="mt-4 rounded-lg bg-blue-50 px-3 py-2 text-center text-sm font-bold text-[#075fa8]">
-            Điểm quy đổi: {section.scaled}/495
-          </p>
-        )}
         <div className="mt-5 rounded-md bg-slate-50 px-4 py-3">
           <p className="text-xs font-bold uppercase tracking-wider text-slate-400">
             Hiệu suất · {percentage}%
@@ -1438,48 +1544,64 @@ function SegmentedListeningPlayer({
       )}
 
       {directionScreen ? (
-        <div className="grid min-h-[calc(100vh-64px)] place-items-center bg-[#f4f6f8] px-5 py-10">
-          <section className="w-full max-w-4xl rounded-2xl border border-slate-200 bg-white px-7 py-10 shadow-xl shadow-slate-950/10 sm:px-12 sm:py-14">
-            <p className="text-center text-xs font-black uppercase tracking-[0.24em] text-sky-600">
-              {step.type === "INTRO"
-                ? "Listening directions"
-                : step.type === "EXAMPLE"
-                  ? "Example"
-                  : "Directions"}
-            </p>
-            <h2 className="mt-5 text-center text-3xl font-black text-[#123f70] sm:text-4xl">
-              {step.type === "INTRO"
-                ? "LISTENING TEST"
-                : step.type === "EXAMPLE"
-                  ? `${step.section.part?.replace("PART_", "PART ")} · EXAMPLE`
-                  : step.section.part?.replace("PART_", "PART ")}
-            </h2>
-            <div className="mx-auto mt-8 max-w-3xl text-lg leading-8 text-slate-700 sm:text-xl sm:leading-9">
-              {step.type === "INTRO" ? (
-                <p>{LISTENING_INTRO}</p>
-              ) : step.type === "EXAMPLE" &&
-                step.section.direction?.exampleHtml ? (
-                <SafeHtml html={step.section.direction.exampleHtml} />
-              ) : (
-                <p>
-                  {candidateDirection(step.section)}
-                </p>
-              )}
-            </div>
-            <div className="mt-9 flex justify-center">
+        <div className="flex h-[calc(100dvh-4rem)] min-h-0 flex-col bg-[#f4f6f8]">
+          <div className="exam-scrollbar min-h-0 flex-1 overflow-y-auto px-5 py-8 sm:py-10">
+            <section className="mx-auto w-full max-w-4xl rounded-2xl border border-slate-200 bg-white px-7 py-10 shadow-xl shadow-slate-950/10 sm:px-12 sm:py-14">
+              <p className="text-center text-xs font-black uppercase tracking-[0.24em] text-sky-600">
+                {step.type === "INTRO"
+                  ? "Listening directions"
+                  : step.type === "EXAMPLE"
+                    ? "Example"
+                    : "Directions"}
+              </p>
+              <h2 className="mt-5 text-center text-3xl font-black text-[#123f70] sm:text-4xl">
+                {step.type === "INTRO"
+                  ? "LISTENING TEST"
+                  : step.type === "EXAMPLE"
+                    ? `${step.section.part?.replace("PART_", "PART ")} · EXAMPLE`
+                    : step.section.part?.replace("PART_", "PART ")}
+              </h2>
+              <div className="mx-auto mt-8 max-w-3xl text-lg leading-8 text-slate-700 sm:text-xl sm:leading-9">
+                {step.type === "INTRO" ? (
+                  <p>{LISTENING_INTRO}</p>
+                ) : step.type === "EXAMPLE" &&
+                  step.section.direction?.exampleHtml ? (
+                  <SafeHtml html={step.section.direction.exampleHtml} />
+                ) : (
+                  <>
+                    <p>
+                      <strong>Directions: </strong>
+                      {candidateDirection(step.section)}
+                    </p>
+                    {step.type === "DIRECTION" &&
+                      step.section.part === "PART_1" && <PartOneExample />}
+                  </>
+                )}
+              </div>
+            </section>
+          </div>
+          <footer className="shrink-0 border-t border-slate-200 bg-white px-5 py-3 shadow-[0_-8px_24px_rgb(15_23_42/8%)] sm:py-4">
+            <div className="mx-auto flex max-w-4xl flex-col items-center justify-between gap-3 sm:flex-row">
+              <p className="text-center text-xs font-medium text-slate-500 sm:text-left sm:text-sm">
+                {step.audio
+                  ? playBlocked
+                    ? "Trình duyệt đang chặn phát tự động. Hãy phát hướng dẫn để tiếp tục."
+                    : "Audio hướng dẫn đang phát và sẽ tự chuyển khi kết thúc."
+                  : "Phần này không có audio hướng dẫn."}
+              </p>
               {step.audio ? (
                 <button
                   type="button"
                   onClick={playBlocked ? () => void playCurrent() : advance}
-                  className="rounded-xl border border-[#123f70]/30 bg-[#123f70] px-6 py-3 text-sm font-bold text-white shadow-sm transition hover:bg-[#0c315a]"
+                  className="shrink-0 rounded-xl border border-[#123f70]/30 bg-[#123f70] px-6 py-3 text-sm font-bold text-white shadow-sm transition hover:bg-[#0c315a]"
                 >
-                  {playBlocked ? "Phát direction" : "Bỏ qua phần này"}
+                  {playBlocked ? "Phát hướng dẫn" : "Bỏ qua hướng dẫn"}
                 </button>
               ) : (
                 <button
                   type="button"
                   onClick={advance}
-                  className="rounded-xl bg-[#1677c8] px-7 py-3 text-sm font-bold text-white shadow-sm transition hover:bg-[#0f65ab]"
+                  className="shrink-0 rounded-xl bg-[#1677c8] px-7 py-3 text-sm font-bold text-white shadow-sm transition hover:bg-[#0f65ab]"
                 >
                   {step.type === "INTRO"
                     ? "Tiếp tục"
@@ -1489,46 +1611,19 @@ function SegmentedListeningPlayer({
                 </button>
               )}
             </div>
-          </section>
+          </footer>
         </div>
       ) : group ? (
-        <div className="grid min-h-[calc(100vh-64px)] place-items-center bg-[#f2f3f5] p-5">
-          <section className="w-full max-w-5xl rounded-sm border border-slate-300 bg-white p-6 shadow-sm">
-            <div className="grid gap-7 lg:grid-cols-[minmax(280px,0.9fr)_1.1fr]">
-              <div>
-                <p className="mb-5 text-[17px] font-bold leading-7 text-[#124b78]">
-                  {listeningQuestionInstruction(step.section.part)}
-                </p>
-                {visibleStimuli.map((stimulus) => (
-                  <Stimulus key={stimulus.id} stimulus={stimulus} />
-                ))}
-                {visibleStimuli.length === 0 &&
-                  step.section.part !== "PART_1" &&
-                  step.section.part !== "PART_2" && (
-                    <div className="grid min-h-56 place-items-center rounded-xl bg-slate-50 text-center text-slate-500">
-                      <p>Listen to the audio and select the best answer.</p>
-                    </div>
-                  )}
-                {playBlocked && (
-                  <button
-                    type="button"
-                    onClick={() => void playCurrent()}
-                    className="mt-5 rounded-xl bg-[#1677c8] px-5 py-3 text-sm font-bold text-white"
-                  >
-                    Phát audio câu hỏi
-                  </button>
-                )}
-              </div>
-              <QuestionList
-                questions={questions}
-                answers={answers}
-                setAnswer={setAnswer}
-                onActivate={onActiveQuestion}
-                part={step.section.part}
-              />
-            </div>
-          </section>
-        </div>
+        <ListeningQuestionLayout
+          section={step.section}
+          stimuli={visibleStimuli}
+          questions={questions}
+          answers={answers}
+          setAnswer={setAnswer}
+          onActivate={onActiveQuestion}
+          playBlocked={playBlocked}
+          onPlay={() => void playCurrent()}
+        />
       ) : null}
     </ExamShell>
   );
@@ -1607,9 +1702,9 @@ function ListeningPlayer({
       progress={`${answeredCount}/${totalQuestionCount}`}
       timer={formatClock(remainingMs)}
     >
-      <div className="grid min-h-[calc(100vh-64px)] place-items-center bg-[#f2f3f5] p-5">
-        <section className="w-full max-w-5xl rounded-sm border border-slate-300 bg-white p-6 shadow-sm">
-          {showsListeningDirections && (isDirection || isExample) ? (
+      {showsListeningDirections && (isDirection || isExample) ? (
+        <div className="exam-scrollbar grid h-[calc(100dvh-4rem)] overflow-y-auto place-items-center bg-[#f2f3f5] p-5">
+          <section className="w-full max-w-5xl rounded-sm border border-slate-300 bg-white p-6 shadow-sm">
             <div className="mx-auto max-w-3xl py-10 text-center">
               <p className="text-xs font-bold uppercase tracking-widest text-[#07579a]">
                 {isExample
@@ -1626,51 +1721,105 @@ function ListeningPlayer({
               <div className="mt-5 space-y-5 text-lg leading-8 text-slate-700">
                 {isListeningIntro && <p>{LISTENING_INTRO}</p>}
                 <p>
+                  <strong>Directions: </strong>
                   {candidateDirection(section)}
                 </p>
+                {section?.part === "PART_1" && <PartOneExample />}
               </div>
               {isExample && section?.direction?.exampleHtml && (
                 <SafeHtml html={section.direction.exampleHtml} />
               )}
             </div>
-          ) : group ? (
-            <div className="grid gap-7 lg:grid-cols-[minmax(280px,0.9fr)_1.1fr]">
-              <div>
-                <p className="mb-5 text-[17px] font-bold leading-7 text-[#124b78]">
-                  {listeningQuestionInstruction(section?.part)}
-                </p>
-                {visibleStimuli.map((stimulus) => (
-                  <Stimulus key={stimulus.id} stimulus={stimulus} />
-                ))}
-                {visibleStimuli.length === 0 && section?.part === "PART_1" && (
-                  <div className="grid min-h-56 place-items-center rounded-xl border border-dashed border-amber-300 bg-amber-50 p-5 text-center text-amber-700">
-                    Part 1 image is unavailable.
-                  </div>
-                )}
-                {visibleStimuli.length === 0 &&
-                  section?.part !== "PART_1" &&
-                  section?.part !== "PART_2" && (
-                    <div className="grid min-h-56 place-items-center rounded-xl bg-slate-50 text-center text-slate-500">
-                      <p>Listen to the audio and select the best answer.</p>
-                    </div>
-                  )}
-              </div>
-              <QuestionList
-                questions={questions}
-                answers={answers}
-                setAnswer={setAnswer}
-                onActivate={onActiveQuestion}
-                part={section?.part}
-              />
+          </section>
+        </div>
+      ) : group && section ? (
+        <ListeningQuestionLayout
+          section={section}
+          stimuli={visibleStimuli}
+          questions={questions}
+          answers={answers}
+          setAnswer={setAnswer}
+          onActivate={onActiveQuestion}
+        />
+      ) : (
+        <div className="grid h-[calc(100dvh-4rem)] place-items-center bg-[#f2f3f5] text-slate-500">
+          Đang chuyển sang nội dung tiếp theo…
+        </div>
+      )}
+    </ExamShell>
+  );
+}
+
+function ListeningQuestionLayout({
+  section,
+  stimuli,
+  questions,
+  answers,
+  setAnswer,
+  onActivate,
+  playBlocked = false,
+  onPlay,
+}: {
+  section: CandidateSection;
+  stimuli: CandidateStimulus[];
+  questions: CandidateQuestion[];
+  answers: Record<string, string>;
+  setAnswer: (questionId: string, optionId: string) => void;
+  onActivate: (questionId: string | null) => void;
+  playBlocked?: boolean;
+  onPlay?: () => void;
+}) {
+  return (
+    <div className="grid h-[calc(100dvh-4rem)] min-h-0 grid-cols-1 grid-rows-2 gap-3 bg-[#f2f3f5] p-3 md:grid-cols-2 md:grid-rows-1 md:gap-5 md:px-5 md:py-4">
+      <section className="exam-scrollbar min-h-0 overflow-y-auto border border-[#d7dde6] bg-white p-5 shadow-[0_1px_2px_rgb(15_23_42/4%)] sm:p-6">
+        <h2 className="sticky -top-5 z-10 -mx-5 -mt-5 mb-6 border-b border-slate-200 bg-white/95 px-5 py-4 text-[17px] font-semibold leading-7 text-[#124b78] backdrop-blur-sm sm:-top-6 sm:-mx-6 sm:-mt-6 sm:px-6">
+          {listeningQuestionInstruction(section.part)}
+        </h2>
+
+        <div className="space-y-7">
+          {stimuli.map((stimulus) => (
+            <div key={stimulus.id}>
+              <Stimulus stimulus={stimulus} />
             </div>
-          ) : (
-            <div className="py-20 text-center text-slate-500">
-              Đang chuyển sang nội dung tiếp theo…
+          ))}
+        </div>
+
+        {stimuli.length === 0 && section.part === "PART_1" && (
+          <div className="grid min-h-64 place-items-center border border-dashed border-amber-300 bg-amber-50 p-5 text-center text-amber-700">
+            Part 1 image is unavailable.
+          </div>
+        )}
+        {stimuli.length === 0 &&
+          section.part !== "PART_1" &&
+          section.part !== "PART_2" && (
+            <div className="grid min-h-64 place-items-center bg-slate-50 p-5 text-center text-slate-500">
+              <p>Listen to the audio and select the best answer.</p>
             </div>
           )}
-        </section>
-      </div>
-    </ExamShell>
+        {playBlocked && onPlay && (
+          <button
+            type="button"
+            onClick={onPlay}
+            className="mt-6 rounded-lg bg-[#1677c8] px-5 py-3 text-sm font-bold text-white shadow-sm transition hover:bg-[#0f65ab]"
+          >
+            Phát audio câu hỏi
+          </button>
+        )}
+      </section>
+
+      <section className="exam-scrollbar min-h-0 overflow-y-auto border border-[#d7dde6] bg-white p-5 shadow-[0_1px_2px_rgb(15_23_42/4%)]">
+        <h2 className="sticky -top-5 z-10 -mx-5 -mt-5 mb-6 border-b border-slate-200 bg-white/95 px-5 py-4 text-lg font-semibold text-[#124b78] backdrop-blur-sm">
+          Question
+        </h2>
+        <QuestionList
+          questions={questions}
+          answers={answers}
+          setAnswer={setAnswer}
+          onActivate={(questionId) => onActivate(questionId)}
+          part={section.part}
+        />
+      </section>
+    </div>
   );
 }
 
@@ -1853,7 +2002,7 @@ function ReadingPlayer({
         progress={`${answeredCount}/${totalQuestionCount}`}
         timer={formatClock(remainingMs)}
       >
-        <div className="grid min-h-[calc(100vh-64px)] place-items-center bg-[#f4f6f8] px-5 py-10">
+        <div className="exam-scrollbar grid h-[calc(100dvh-4rem)] overflow-y-auto place-items-center bg-[#f4f6f8] px-5 py-10">
           <section className="w-full max-w-4xl rounded-2xl border border-slate-200 bg-white px-7 py-10 shadow-xl shadow-slate-950/10 sm:px-12 sm:py-14">
             <p className="text-center text-xs font-black uppercase tracking-[0.24em] text-sky-600">
               Directions
@@ -1863,11 +2012,16 @@ function ReadingPlayer({
                 ? "READING TEST"
                 : directionSection?.part?.replace("PART_", "PART ")}
             </h2>
-            <p className="mx-auto mt-8 max-w-3xl text-lg leading-8 text-slate-700 sm:text-xl sm:leading-9">
-              {directionStage === "INTRO"
-                ? READING_INTRO
-                : candidateDirection(directionSection)}
-            </p>
+            <div className="mx-auto mt-8 max-w-3xl text-lg leading-8 text-slate-700 sm:text-xl sm:leading-9">
+              {directionStage === "INTRO" ? (
+                <p>{READING_INTRO}</p>
+              ) : (
+                <p>
+                  <strong>Directions: </strong>
+                  {candidateDirection(directionSection)}
+                </p>
+              )}
+            </div>
             <div className="mt-9 flex justify-center">
               <button
                 type="button"
@@ -1893,7 +2047,7 @@ function ReadingPlayer({
       submit={() => setCatalogMode("submit")}
     >
       <div className="grid h-[calc(100vh-120px)] grid-cols-1 grid-rows-2 gap-3 bg-[#f2f3f5] p-3 md:grid-cols-2 md:grid-rows-1 md:gap-5 md:px-5 md:py-4">
-        <section className="exam-scrollbar min-h-0 overflow-y-auto border border-[#d7dde6] bg-white p-6 shadow-[0_1px_2px_rgb(15_23_42/4%)]">
+        <section className="exam-scrollbar min-h-0 overflow-y-auto border border-[#d7dde6] bg-white p-6 pb-10 shadow-[0_1px_2px_rgb(15_23_42/4%)]">
           {page.section.part === "PART_5" ? (
             <p className="text-lg font-semibold leading-8 text-[#124b78]">
               {page.section.direction?.text ??
@@ -2160,7 +2314,7 @@ function ExamShell({
   };
 
   return (
-    <div className="relative h-screen overflow-hidden">
+    <div className="relative h-dvh overflow-hidden">
       <header className="grid h-16 grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 bg-[#001b47] px-3 text-white shadow-sm sm:gap-4 sm:px-6">
         <div className="rounded-md bg-white px-2 py-2 text-[10px] font-black text-[#07579a] shadow-sm sm:px-3 sm:text-xs">
           PACE<span className="text-[#2493dd]">LINGO</span>
@@ -2196,6 +2350,21 @@ function ExamShell({
         </div>
       </header>
       {children}
+    </div>
+  );
+}
+
+function PartOneExample() {
+  return (
+    <div className="mt-8">
+      <img
+        src="/directions/part-1-example.jpg"
+        alt="Two women sitting at a table"
+        className="mx-auto max-h-[430px] w-full max-w-2xl rounded-lg object-contain shadow-sm"
+      />
+      <p className="mx-auto mt-6 max-w-3xl text-left italic">
+        {PART_1_EXAMPLE_TEXT}
+      </p>
     </div>
   );
 }
@@ -2308,7 +2477,7 @@ function SafeHtml({
   const blocks = (
     html.match(/<(p|div|article|table|tr|li|header|section)\b/gi) ?? []
   ).length;
-  const height = compact
+  const estimatedHeight = compact
     ? Math.min(
         340,
         Math.max(38, Math.ceil(textLength / 60) * 28 + blocks * 11 + 5),
@@ -2318,11 +2487,23 @@ function SafeHtml({
         Math.max(180, Math.ceil(textLength / 55) * 28 + blocks * 18 + 70),
       );
   const fontSize = compact ? 17 : 16;
+  const [height, setHeight] = useState(estimatedHeight);
+
   return (
     <iframe
-      sandbox=""
+      sandbox="allow-same-origin"
       scrolling="no"
-      srcDoc={`<!doctype html><meta charset="utf-8"><style>html,body{overflow:hidden}body{font:${fontSize}px/1.65 Roboto,"Segoe UI","Noto Sans",system-ui,sans-serif;margin:0;color:#172033}p:first-child{margin-top:0}p:last-child{margin-bottom:0}table{border-collapse:collapse;width:100%}td,th{border:1px solid #aaa;padding:8px}img{max-width:100%}</style>${html}`}
+      onLoad={(event) => {
+        const frameDocument = event.currentTarget.contentDocument;
+        const contentHeight = Math.max(
+          frameDocument?.documentElement.scrollHeight ?? 0,
+          frameDocument?.body.scrollHeight ?? 0,
+        );
+        if (contentHeight > 0) {
+          setHeight(Math.max(estimatedHeight, contentHeight + (compact ? 4 : 20)));
+        }
+      }}
+      srcDoc={`<!doctype html><meta charset="utf-8"><style>html,body{overflow:hidden}body{box-sizing:border-box;font:${fontSize}px/1.65 Roboto,"Segoe UI","Noto Sans",system-ui,sans-serif;margin:0;padding:0 0 ${compact ? 2 : 28}px;color:#172033}p:first-child{margin-top:0}p:last-child{margin-bottom:0}table{border-collapse:collapse;width:100%}td,th{border:1px solid #aaa;padding:8px}img{max-width:100%}</style>${html}`}
       style={{ height }}
       className="block w-full border-0 bg-white"
       title="Candidate content"

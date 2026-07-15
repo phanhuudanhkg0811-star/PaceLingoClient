@@ -255,6 +255,39 @@ export function JsonImportWorkbench() {
     }
   }
 
+  async function removeImport() {
+    if (!current) return;
+    const targetNote = current.targetTest
+      ? " Đề đã tạo sẽ được giữ nguyên."
+      : "";
+    if (
+      !window.confirm(
+        `Xóa vĩnh viễn JSON import “${importTitle(current)}”?${targetNote}`,
+      )
+    )
+      return;
+    setBusy(true);
+    setError(null);
+    try {
+      const response = await apiFetch(`/admin/imports/${current.id}`, {
+        method: "DELETE",
+      });
+      if (!response.ok) throw new Error(await responseMessage(response));
+      setCurrent(null);
+      setSourceText(initialJson);
+      setTargetTestId("");
+      setShowNormalized(false);
+      setNotice("Đã xóa JSON import. Đề được tạo từ import này vẫn được giữ lại.");
+      await loadSidebar();
+    } catch (reason) {
+      setError(
+        reason instanceof Error ? reason.message : "Không thể xóa JSON import",
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
+
   async function loadFile(event: ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     event.target.value = "";
@@ -528,7 +561,7 @@ export function JsonImportWorkbench() {
                   >
                     <option value="">Chọn đề đích…</option>
                     {tests
-                      .filter((test) => test.status === "DRAFT")
+                      .filter((test) => test.status !== "ARCHIVED")
                       .map((test) => (
                         <option key={test.id} value={test.id}>
                           {test.title} · {test.totalQuestions} câu
@@ -554,6 +587,13 @@ export function JsonImportWorkbench() {
                     Bỏ import này
                   </button>
                 )}
+                <button
+                  disabled={busy}
+                  onClick={() => void removeImport()}
+                  className="mt-2 w-full rounded-xl border border-red-300 px-4 py-2 text-sm font-bold text-red-600 hover:bg-red-50 disabled:opacity-40 dark:border-red-800 dark:hover:bg-red-950/30"
+                >
+                  Xóa vĩnh viễn JSON import
+                </button>
                 {!canPublish && canEdit && (
                   <p className="mt-3 text-xs leading-5 text-muted">
                     Cần sửa hết error hoặc bật “Bỏ qua câu lỗi” rồi validate

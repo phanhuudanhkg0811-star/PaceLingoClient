@@ -12,9 +12,9 @@ export const TOEIC_PART_DIRECTIONS: Record<CandidatePart, string> = {
   PART_2:
     "You will hear a question or statement and three responses spoken in English. They will not be printed in your test book and will be spoken only one time. Select the best response to the question or statement and mark the letter (A), (B), or (C) on your answer sheet.",
   PART_3:
-    "You will hear some conversations between two or more people. You will be asked to answer three questions about what the speakers say in each conversation. Select the best response to each question and mark the letter (A), (B), (C), or (D) on your answer sheet. The conversations will not be printed in your test book and will be spoken only one time. Some questions may require responses based on visual information.",
+    "You will hear some conversations between two or more people. You will be asked to answer three questions about what the speakers say in each conversation. Select the best response to each question and mark the letter (A), (B), (C), or (D) on your answer sheet. The conversations will not be printed in your test book and will be spoken only one time.",
   PART_4:
-    "You will hear some talks given by a single speaker. You will be asked to answer three questions about what the speaker says in each talk. Select the best response to each question and mark the letter (A), (B), (C), or (D) on your answer sheet. The talks will not be printed in your test book and will be spoken only one time. Some questions may require responses based on visual information.",
+    "You will hear some talks given by a single speaker. You will be asked to answer three questions about what the speaker says in each talk. Select the best response to each question and mark the letter (A), (B), (C), or (D) on your answer sheet. The talks will not be printed in your test book and will be spoken only one time.",
   PART_5:
     "A word or phrase is missing in each of the sentences below. Four answer choices are given below each sentence. Select the best answer to complete the sentence. Then mark the letter (A), (B), (C), or (D) on your answer sheet.",
   PART_6:
@@ -22,6 +22,9 @@ export const TOEIC_PART_DIRECTIONS: Record<CandidatePart, string> = {
   PART_7:
     "In this part you will read a selection of texts, such as magazine and newspaper articles, e-mails, and instant messages. Each text or set of texts is followed by several questions. Select the best answer for each question and mark the letter (A), (B), (C), or (D) on your answer sheet.",
 };
+
+export const PART_1_EXAMPLE_TEXT =
+  'Statement (C), “They’re sitting at a table,” is the best description of the picture, so you should select answer (C) and mark it on your answer sheet.';
 
 export function partDirection(part: CandidatePart | null | undefined) {
   return part ? TOEIC_PART_DIRECTIONS[part] : "";

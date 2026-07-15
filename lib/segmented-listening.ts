@@ -11,7 +11,7 @@ export type SegmentedListeningStep =
       type: "INTRO";
       section: CandidateSection;
       group: null;
-      audio: null;
+      audio: CandidateMedia | null;
     }
   | {
       key: string;
@@ -44,7 +44,7 @@ export function buildSegmentedListeningSteps(
       type: "INTRO",
       section: sections[0],
       group: null,
-      audio: null,
+      audio: payload.test.listeningIntroAudio,
     });
   }
 

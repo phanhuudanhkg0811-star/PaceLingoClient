@@ -65,6 +65,7 @@ export function DirectionTemplateManager() {
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -148,6 +149,7 @@ export function DirectionTemplateManager() {
     event.preventDefault();
     setBusy(true);
     setError(null);
+    setNotice(null);
     try {
       const payload = editing
         ? {
@@ -168,6 +170,9 @@ export function DirectionTemplateManager() {
       if (!response.ok) throw new Error(await responseMessage(response));
       setEditing(null);
       setForm(emptyForm);
+      setNotice(
+        "Đã lưu Direction. Các đề đã public cần Publish version mới để nhận audio/nội dung vừa cập nhật.",
+      );
       await load();
     } catch (reason) {
       setError(
@@ -181,12 +186,16 @@ export function DirectionTemplateManager() {
   async function setDefault(template: DirectionTemplate) {
     setBusy(true);
     setError(null);
+    setNotice(null);
     try {
       const response = await apiFetch(
         `/admin/directions/${template.id}/default`,
         { method: "POST" },
       );
       if (!response.ok) throw new Error(await responseMessage(response));
+      setNotice(
+        "Đã đổi Direction mặc định. Các đề đã public cần Publish version mới để áp dụng thay đổi.",
+      );
       await load();
     } catch (reason) {
       setError(
@@ -290,6 +299,12 @@ export function DirectionTemplateManager() {
           <div className="mt-6 flex justify-between gap-4 rounded-2xl bg-danger-soft px-5 py-4 text-sm text-danger">
             <span>{error}</span>
             <button onClick={() => setError(null)}>×</button>
+          </div>
+        )}
+        {notice && (
+          <div className="mt-6 flex justify-between gap-4 rounded-2xl border border-blue-200 bg-blue-50 px-5 py-4 text-sm font-semibold text-blue-800 dark:border-blue-900 dark:bg-blue-950/40 dark:text-blue-200">
+            <span>{notice}</span>
+            <button onClick={() => setNotice(null)}>×</button>
           </div>
         )}
 

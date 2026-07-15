@@ -17,37 +17,206 @@ import { ThemeToggle } from "./theme-toggle";
 
 type EditorTab = "content" | "timeline" | "preview" | "validation";
 
+interface MediaListResponse {
+  items: MediaAsset[];
+  pagination: {
+    page: number;
+    pageSize: number;
+    total: number;
+    totalPages: number;
+  };
+}
+
+interface QuestionDraft {
+  number: number;
+  promptHtml: string;
+  explanation: string;
+  topic: string;
+  tags: string;
+  difficulty: "" | "EASY" | "MEDIUM" | "HARD";
+  options: Array<{
+    label: string;
+    contentHtml: string;
+    isCorrect: boolean;
+    order: number;
+  }>;
+}
+
+type QuestionDrafts = Record<string, QuestionDraft>;
+
+type StimulusDraftKind = "HTML" | "IMAGE" | "AUDIO";
+
+interface StimulusDraft {
+  kind: StimulusDraftKind;
+  html: string;
+  mediaId: string;
+}
+
+type StimulusDrafts = Record<string, StimulusDraft>;
+
+function stimulusDraftKey(groupId: string) {
+  return `pacelingo:test-editor:stimulus-draft:${groupId}`;
+}
+
+function isPendingStimulusDraft(draft: StimulusDraft | undefined) {
+  if (!draft) return false;
+  return draft.kind === "HTML" ? Boolean(draft.html.trim()) : Boolean(draft.mediaId);
+}
+
+function questionToDraft(question: Question): QuestionDraft {
+  return {
+    number: question.number,
+    promptHtml: question.promptHtml,
+    explanation: question.explanationHtml ?? "",
+    topic: question.grammarTopic ?? "",
+    tags: question.vocabularyTags.join(", "),
+    difficulty: question.difficulty ?? "",
+    options: question.options.map((option) => ({
+      label: option.label,
+      contentHtml: option.contentHtml,
+      isCorrect: option.isCorrect,
+      order: option.order,
+    })),
+  };
+}
+
+function questionDraftPayload(draft: QuestionDraft) {
+  return {
+    number: draft.number,
+    promptHtml: draft.promptHtml,
+    explanationHtml: draft.explanation || null,
+    grammarTopic: draft.topic || null,
+    vocabularyTags: draft.tags
+      .split(",")
+      .map((value) => value.trim())
+      .filter(Boolean),
+    difficulty: draft.difficulty || null,
+    options: draft.options,
+  };
+}
+
+function persistQuestionDrafts(testId: string, drafts: QuestionDrafts) {
+  try {
+    const key = `pacelingo:test-editor:question-drafts:${testId}`;
+    if (Object.keys(drafts).length)
+      window.localStorage.setItem(key, JSON.stringify(drafts));
+    else window.localStorage.removeItem(key);
+  } catch {
+    // The in-memory batch editor remains usable when storage is unavailable.
+  }
+}
+
+const mediaNameCollator = new Intl.Collator("vi", {
+  numeric: true,
+  sensitivity: "base",
+});
+
+async function fetchAllMedia() {
+  const itemsById = new Map<string, MediaAsset>();
+  let page = 1;
+  let totalPages = 1;
+
+  do {
+    const response = await apiFetch(`/admin/media?page=${page}&pageSize=50`);
+    if (!response.ok) throw new Error(await responseMessage(response));
+    const payload = (await response.json()) as MediaListResponse;
+    for (const item of payload.items) itemsById.set(item.id, item);
+    totalPages = payload.pagination.totalPages;
+    page += 1;
+  } while (page <= totalPages);
+
+  return [...itemsById.values()].sort((left, right) =>
+    mediaNameCollator.compare(left.originalName, right.originalName),
+  );
+}
+
+function MediaOptionGroups({
+  media,
+  type,
+}: {
+  media: MediaAsset[];
+  type: MediaAsset["type"];
+}) {
+  const groups = new Map<
+    string,
+    { name: string; unfiled: boolean; items: MediaAsset[] }
+  >();
+  const seenIds = new Set<string>();
+
+  for (const item of media) {
+    if (item.type !== type || seenIds.has(item.id)) continue;
+    seenIds.add(item.id);
+    const key = item.folder?.id ?? "__unfiled__";
+    const group = groups.get(key) ?? {
+      name: item.folder?.name ?? "Chưa phân loại",
+      unfiled: !item.folder,
+      items: [],
+    };
+    group.items.push(item);
+    groups.set(key, group);
+  }
+
+  return [...groups.entries()]
+    .sort(([, left], [, right]) => {
+      if (left.unfiled !== right.unfiled) return left.unfiled ? 1 : -1;
+      return mediaNameCollator.compare(left.name, right.name);
+    })
+    .map(([key, group]) => (
+      <optgroup key={key} label={`${group.name} (${group.items.length})`}>
+        {group.items
+          .sort((left, right) =>
+            mediaNameCollator.compare(left.originalName, right.originalName),
+          )
+          .map((item) => (
+            <option key={item.id} value={item.id}>
+              {item.originalName}
+            </option>
+          ))}
+      </optgroup>
+    ));
+}
+
+function removeLocalDraft(key: string) {
+  try {
+    window.localStorage.removeItem(key);
+  } catch {
+    // Ignore restricted storage; the in-memory editor remains usable.
+  }
+}
+
 export function TestEditor({ testId }: { testId: string }) {
   const [test, setTest] = useState<TestTree | null>(null);
   const [media, setMedia] = useState<MediaAsset[]>([]);
+  const [questionDrafts, setQuestionDrafts] = useState<QuestionDrafts>({});
+  const questionDraftsRef = useRef<QuestionDrafts>({});
+  const [stimulusDrafts, setStimulusDrafts] = useState<StimulusDrafts>({});
+  const stimulusDraftsRef = useRef<StimulusDrafts>({});
   const [tab, setTab] = useState<EditorTab>("content");
   const [sectionId, setSectionId] = useState<string | null>(null);
   const [groupId, setGroupId] = useState<string | null>(null);
   const [questionId, setQuestionId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [mediaRefreshing, setMediaRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
+  const mediaLoadedRef = useRef(false);
 
   const load = useCallback(
     async (initial = false) => {
       try {
-        const [testResponse, imageResponse, audioResponse] = await Promise.all([
+        const [testResponse, mediaItems] = await Promise.all([
           apiFetch(`/admin/tests/${testId}`),
-          apiFetch("/admin/media?type=IMAGE&pageSize=50"),
-          apiFetch("/admin/media?type=AUDIO&pageSize=50"),
+          mediaLoadedRef.current ? Promise.resolve(null) : fetchAllMedia(),
         ]);
         if (!testResponse.ok)
           throw new Error(await responseMessage(testResponse));
-        if (!imageResponse.ok)
-          throw new Error(await responseMessage(imageResponse));
-        if (!audioResponse.ok)
-          throw new Error(await responseMessage(audioResponse));
         const tree = (await testResponse.json()) as TestTree;
-        const images = (await imageResponse.json()) as { items: MediaAsset[] };
-        const audio = (await audioResponse.json()) as { items: MediaAsset[] };
         setTest(tree);
-        setMedia([...images.items, ...audio.items]);
+        if (mediaItems) {
+          setMedia(mediaItems);
+          mediaLoadedRef.current = true;
+        }
         if (initial || !sectionId) {
           const firstSection = tree.sections[0];
           const firstGroup = firstSection?.questionGroups[0];
@@ -70,6 +239,44 @@ export function TestEditor({ testId }: { testId: string }) {
     queueMicrotask(() => void load(true));
     // Initial load only; selection-preserving reloads are called explicitly.
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [testId]);
+
+  useEffect(() => {
+    if (!test) return;
+    const drafts: StimulusDrafts = {};
+    try {
+      for (const group of test.sections.flatMap(
+        (section) => section.questionGroups,
+      )) {
+        const value = window.localStorage.getItem(stimulusDraftKey(group.id));
+        if (!value) continue;
+        const draft = JSON.parse(value) as StimulusDraft;
+        if (
+          draft.kind === "HTML" ||
+          draft.kind === "IMAGE" ||
+          draft.kind === "AUDIO"
+        )
+          drafts[group.id] = draft;
+      }
+    } catch {
+      // Ignore a malformed draft; the active editor can overwrite it.
+    }
+    stimulusDraftsRef.current = drafts;
+    queueMicrotask(() => setStimulusDrafts(drafts));
+  }, [test]);
+
+  useEffect(() => {
+    try {
+      const value = window.localStorage.getItem(
+        `pacelingo:test-editor:question-drafts:${testId}`,
+      );
+      if (!value) return;
+      const drafts = JSON.parse(value) as QuestionDrafts;
+      questionDraftsRef.current = drafts;
+      queueMicrotask(() => setQuestionDrafts(drafts));
+    } catch {
+      persistQuestionDrafts(testId, {});
+    }
   }, [testId]);
 
   const selection = useMemo(() => {
@@ -103,6 +310,190 @@ export function TestEditor({ testId }: { testId: string }) {
     }
   }
 
+  async function refreshMedia() {
+    setMediaRefreshing(true);
+    setError(null);
+    try {
+      setMedia(await fetchAllMedia());
+      mediaLoadedRef.current = true;
+      setNotice("Đã tải lại toàn bộ Media Library");
+    } catch (reason) {
+      setError(
+        reason instanceof Error
+          ? reason.message
+          : "Không thể tải lại Media Library",
+      );
+    } finally {
+      setMediaRefreshing(false);
+    }
+  }
+
+  function updateQuestionDraft(questionId: string, draft: QuestionDraft) {
+    const next = { ...questionDraftsRef.current, [questionId]: draft };
+    questionDraftsRef.current = next;
+    setQuestionDrafts(next);
+    persistQuestionDrafts(testId, next);
+  }
+
+  function discardQuestionDraft(questionId: string) {
+    const next = { ...questionDraftsRef.current };
+    delete next[questionId];
+    questionDraftsRef.current = next;
+    setQuestionDrafts(next);
+    persistQuestionDrafts(testId, next);
+  }
+
+  function updateStimulusDraft(groupId: string, draft: StimulusDraft | null) {
+    const next = { ...stimulusDraftsRef.current };
+    if (draft) {
+      next[groupId] = draft;
+      try {
+        window.localStorage.setItem(
+          stimulusDraftKey(groupId),
+          JSON.stringify(draft),
+        );
+      } catch {
+        // Keep the in-memory draft when localStorage is unavailable.
+      }
+    } else {
+      delete next[groupId];
+      removeLocalDraft(stimulusDraftKey(groupId));
+    }
+    stimulusDraftsRef.current = next;
+    setStimulusDrafts(next);
+  }
+
+  async function saveQuestionDrafts(questionIds?: string[]) {
+    const requestedIds = questionIds ?? Object.keys(questionDraftsRef.current);
+    const entries = requestedIds
+      .map((id) => [id, questionDraftsRef.current[id]] as const)
+      .filter((entry): entry is readonly [string, QuestionDraft] =>
+        Boolean(entry[1]),
+      );
+    if (!entries.length) return;
+
+    setBusy(true);
+    setError(null);
+    const succeeded = new Set<string>();
+    const failures: string[] = [];
+    let cursor = 0;
+
+    async function worker() {
+      while (cursor < entries.length) {
+        const [questionId, draft] = entries[cursor++];
+        try {
+          const response = await apiFetch(
+            `/admin/tests/questions/${questionId}`,
+            {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(questionDraftPayload(draft)),
+            },
+          );
+          if (!response.ok) throw new Error(await responseMessage(response));
+          succeeded.add(questionId);
+        } catch (reason) {
+          failures.push(
+            reason instanceof Error ? reason.message : `Câu ${draft.number}`,
+          );
+        }
+      }
+    }
+
+    try {
+      await Promise.all(
+        Array.from(
+          { length: Math.min(5, entries.length) },
+          async () => worker(),
+        ),
+      );
+      const remaining = { ...questionDraftsRef.current };
+      for (const id of succeeded) delete remaining[id];
+      questionDraftsRef.current = remaining;
+      setQuestionDrafts(remaining);
+      persistQuestionDrafts(testId, remaining);
+      if (succeeded.size)
+        setNotice(`Đã lưu ${succeeded.size} câu hỏi trong một lượt`);
+      if (failures.length)
+        setError(
+          `${failures.length} câu chưa lưu được: ${failures.slice(0, 3).join("; ")}`,
+        );
+      await load(false);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function saveStimulusDrafts() {
+    const entries = Object.entries(stimulusDraftsRef.current).filter(
+      ([, draft]) => isPendingStimulusDraft(draft),
+    );
+    if (!entries.length) return;
+
+    setBusy(true);
+    setError(null);
+    const succeeded = new Set<string>();
+    const failures: string[] = [];
+    let cursor = 0;
+
+    async function worker() {
+      while (cursor < entries.length) {
+        const [groupId, draft] = entries[cursor++];
+        try {
+          const response = await apiFetch(
+            `/admin/tests/groups/${groupId}/stimuli`,
+            {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                type: draft.kind,
+                contentHtml: draft.kind === "HTML" ? draft.html : null,
+                mediaAssetId: draft.kind === "HTML" ? null : draft.mediaId,
+                altText: null,
+              }),
+            },
+          );
+          if (!response.ok) throw new Error(await responseMessage(response));
+          succeeded.add(groupId);
+        } catch (reason) {
+          failures.push(
+            reason instanceof Error ? reason.message : `Group ${groupId}`,
+          );
+        }
+      }
+    }
+
+    try {
+      await Promise.all(
+        Array.from(
+          { length: Math.min(5, entries.length) },
+          async () => worker(),
+        ),
+      );
+      const remaining = { ...stimulusDraftsRef.current };
+      for (const groupId of succeeded) {
+        delete remaining[groupId];
+        removeLocalDraft(stimulusDraftKey(groupId));
+      }
+      stimulusDraftsRef.current = remaining;
+      setStimulusDrafts(remaining);
+      if (succeeded.size)
+        setNotice(`Đã thêm media/passage cho ${succeeded.size} group`);
+      if (failures.length)
+        setError(
+          `${failures.length} group chưa lưu được: ${failures.slice(0, 3).join("; ")}`,
+        );
+      await load(false);
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function saveAllDrafts() {
+    await saveQuestionDrafts();
+    await saveStimulusDrafts();
+  }
+
   if (loading)
     return (
       <main className="grid min-h-screen place-items-center text-muted">
@@ -115,7 +506,12 @@ export function TestEditor({ testId }: { testId: string }) {
         {error ?? "Không tìm thấy đề"}
       </main>
     );
-  const editable = test.status === "DRAFT";
+  const editable = test.status !== "ARCHIVED";
+  const pendingStimulusCount = Object.values(stimulusDrafts).filter(
+    isPendingStimulusDraft,
+  ).length;
+  const pendingDraftCount =
+    Object.keys(questionDrafts).length + pendingStimulusCount;
 
   return (
     <main className="min-h-screen">
@@ -132,7 +528,7 @@ export function TestEditor({ testId }: { testId: string }) {
               <div className="flex items-center gap-2">
                 <h1 className="truncate font-bold">{test.title}</h1>
                 <span
-                  className={`rounded-full px-2 py-0.5 text-[9px] font-black ${editable ? "bg-amber-400/15 text-amber-600 dark:text-amber-300" : "bg-accent-soft text-accent-strong"}`}
+                  className={`rounded-full px-2 py-0.5 text-[9px] font-black ${test.status === "DRAFT" ? "bg-amber-400/15 text-amber-600 dark:text-amber-300" : test.status === "PUBLISHED" ? "bg-accent-soft text-accent-strong" : "bg-surface-raised text-muted"}`}
                 >
                   {test.status}
                 </span>
@@ -144,6 +540,28 @@ export function TestEditor({ testId }: { testId: string }) {
             </div>
           </div>
           <div className="flex items-center gap-2">
+            {editable && (
+              <button
+                type="button"
+                onClick={() => void saveAllDrafts()}
+                disabled={busy || pendingDraftCount === 0}
+                title="Lưu tất cả câu hỏi và media đang chờ"
+                className="rounded-xl bg-accent px-3 py-2 text-xs font-bold text-white shadow-sm disabled:cursor-not-allowed disabled:opacity-40 dark:text-slate-950"
+              >
+                {busy
+                  ? "Đang lưu…"
+                  : `Lưu tất cả (${pendingDraftCount})`}
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => void refreshMedia()}
+              disabled={mediaRefreshing}
+              title="Tải lại ảnh và audio mới upload"
+              className="rounded-xl border border-border bg-surface px-3 py-2 text-xs font-bold text-muted hover:border-accent/50 hover:text-accent disabled:opacity-50"
+            >
+              {mediaRefreshing ? "Đang tải…" : `↻ Media (${media.length})`}
+            </button>
             <nav className="flex rounded-xl border border-border bg-surface p-1 text-xs font-bold">
               {(
                 ["content", "timeline", "preview", "validation"] as EditorTab[]
@@ -162,6 +580,12 @@ export function TestEditor({ testId }: { testId: string }) {
         </div>
       </header>
       <div className="mx-auto max-w-[1700px] px-4 py-5 sm:px-6">
+        {test.status === "PUBLISHED" && (
+          <div className="mb-5 rounded-2xl border border-blue-200 bg-blue-50 px-4 py-3 text-center text-xs font-semibold text-blue-800 dark:border-blue-900 dark:bg-blue-950/40 dark:text-blue-200">
+            Bạn đang chỉnh nội dung cho version kế tiếp. Version đang công
+            khai vẫn giữ nguyên cho đến khi bấm “Publish version mới”.
+          </div>
+        )}
         {(error || notice) && (
           <div
             className={`mb-5 flex justify-between rounded-2xl px-4 py-3 text-sm ${error ? "bg-danger-soft text-danger" : "bg-accent-soft text-accent-strong"}`}
@@ -199,6 +623,12 @@ export function TestEditor({ testId }: { testId: string }) {
               setQuestionId(group?.questions[0]?.id ?? null);
             }}
             onSelectQuestion={setQuestionId}
+            questionDrafts={questionDrafts}
+            onQuestionDraftChange={updateQuestionDraft}
+            onDiscardQuestionDraft={discardQuestionDraft}
+            onSaveQuestionDrafts={saveQuestionDrafts}
+            stimulusDrafts={stimulusDrafts}
+            onStimulusDraftChange={updateStimulusDraft}
             mutate={mutate}
           />
         )}
@@ -237,6 +667,12 @@ function ContentEditor({
   onSelectSection,
   onSelectGroup,
   onSelectQuestion,
+  questionDrafts,
+  onQuestionDraftChange,
+  onDiscardQuestionDraft,
+  onSaveQuestionDrafts,
+  stimulusDrafts,
+  onStimulusDraftChange,
   mutate,
 }: {
   test: TestTree;
@@ -251,6 +687,15 @@ function ContentEditor({
   onSelectSection: (id: string) => void;
   onSelectGroup: (id: string) => void;
   onSelectQuestion: (id: string) => void;
+  questionDrafts: QuestionDrafts;
+  onQuestionDraftChange: (id: string, draft: QuestionDraft) => void;
+  onDiscardQuestionDraft: (id: string) => void;
+  onSaveQuestionDrafts: (ids?: string[]) => Promise<void>;
+  stimulusDrafts: StimulusDrafts;
+  onStimulusDraftChange: (
+    groupId: string,
+    draft: StimulusDraft | null,
+  ) => void;
   mutate: (
     path: string,
     init: RequestInit,
@@ -310,6 +755,11 @@ function ContentEditor({
                       className={`block w-full truncate rounded-lg px-2 py-1.5 text-left text-xs ${group?.id === g.id ? "bg-surface-raised font-bold text-accent" : "text-muted hover:text-foreground"}`}
                     >
                       Group {index + 1} · {g.type.replaceAll("_", " ")}
+                      {isPendingStimulusDraft(stimulusDrafts[g.id]) && (
+                        <span className="ml-1 font-black text-amber-600">
+                          · CHƯA LƯU
+                        </span>
+                      )}
                     </button>
                   ))}
                 </div>
@@ -322,16 +772,19 @@ function ContentEditor({
         {group ? (
           <>
             <GroupEditor
-              key={group.id}
+              key={`group-editor-${group.id}`}
               group={group}
               editable={editable}
               mutate={mutate}
             />
             <StimulusEditor
+              key={`stimulus-editor-${group.id}`}
               group={group}
               media={media}
               editable={editable}
               busy={busy}
+              draft={stimulusDrafts[group.id]}
+              onDraftChange={onStimulusDraftChange}
               mutate={mutate}
             />
             <div className="rounded-3xl border border-border bg-surface p-5">
@@ -367,6 +820,11 @@ function ContentEditor({
                     <span className="text-xs font-black text-accent">
                       Câu {item.number}
                     </span>
+                    {questionDrafts[item.id] && (
+                      <span className="ml-2 rounded-full bg-amber-100 px-2 py-0.5 text-[9px] font-black text-amber-700">
+                        CHƯA LƯU
+                      </span>
+                    )}
                     <HtmlText html={item.promptHtml} />
                     <div className="mt-3 flex gap-1">
                       {item.options.map((option) => (
@@ -399,6 +857,10 @@ function ContentEditor({
             busy={busy}
             mutate={mutate}
             onSelect={onSelectQuestion}
+            draft={questionDrafts[question.id]}
+            onDraftChange={onQuestionDraftChange}
+            onDiscardDraft={onDiscardQuestionDraft}
+            onSaveDrafts={onSaveQuestionDrafts}
           />
         ) : (
           <Empty text="Chọn một câu hỏi để chỉnh sửa" />
@@ -423,8 +885,15 @@ function MetadataForm({
   const [description, setDescription] = useState(test.description ?? "");
   const [duration, setDuration] = useState(test.durationMinutes);
   const [audioId, setAudioId] = useState(test.fullListeningAudioId ?? "");
+  const [introAudioId, setIntroAudioId] = useState(
+    test.listeningIntroAudioId ?? "",
+  );
   const [testType, setTestType] = useState(test.type);
-  async function save(fullAudioId = audioId, nextType = testType) {
+  async function save(
+    fullAudioId = audioId,
+    nextType = testType,
+    listeningIntroAudioId = introAudioId,
+  ) {
     if (!editable) return;
     await mutate(`/admin/tests/${test.id}`, {
       method: "PATCH",
@@ -435,6 +904,7 @@ function MetadataForm({
         type: nextType,
         durationMinutes: duration,
         fullListeningAudioId: fullAudioId || null,
+        listeningIntroAudioId: listeningIntroAudioId || null,
       }),
     });
   }
@@ -501,16 +971,26 @@ function MetadataForm({
             className="mt-1 w-full rounded-lg border border-border bg-background px-2 py-2 text-xs text-foreground"
           >
             <option value="">—</option>
-            {media
-              .filter((m) => m.type === "AUDIO")
-              .map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.originalName}
-                </option>
-              ))}
+            <MediaOptionGroups media={media} type="AUDIO" />
           </select>
         </label>
       </div>
+      <label className="mt-2 block text-[10px] text-muted">
+        Listening intro audio (Full Test)
+        <select
+          value={introAudioId}
+          disabled={!editable}
+          onChange={(event) => {
+            const value = event.target.value;
+            setIntroAudioId(value);
+            queueMicrotask(() => void save(audioId, testType, value));
+          }}
+          className="mt-1 w-full rounded-lg border border-border bg-background px-2 py-2 text-xs text-foreground"
+        >
+          <option value="">— Không phát audio intro —</option>
+          <MediaOptionGroups media={media} type="AUDIO" />
+        </select>
+      </label>
     </div>
   );
 }
@@ -648,13 +1128,7 @@ function EditableStimulus({
             className="rounded-lg border border-border bg-background px-3 py-2 text-xs"
           >
             <option value="">Chọn {stimulus.type.toLowerCase()}…</option>
-            {media
-              .filter((item) => item.type === stimulus.type)
-              .map((item) => (
-                <option key={item.id} value={item.id}>
-                  {item.originalName}
-                </option>
-              ))}
+            <MediaOptionGroups media={media} type={stimulus.type} />
           </select>
           <input
             value={altText}
@@ -674,19 +1148,36 @@ function StimulusEditor({
   media,
   editable,
   busy,
+  draft,
+  onDraftChange,
   mutate,
 }: {
   group: QuestionGroup;
   media: MediaAsset[];
   editable: boolean;
   busy: boolean;
+  draft: StimulusDraft | undefined;
+  onDraftChange: (groupId: string, draft: StimulusDraft | null) => void;
   mutate: ContentProps["mutate"];
 }) {
-  const [kind, setKind] = useState<"HTML" | "IMAGE" | "AUDIO">("HTML");
-  const [html, setHtml] = useState("");
-  const [mediaId, setMediaId] = useState("");
+  const form = draft ?? { kind: "HTML", html: "", mediaId: "" };
+  const { kind, html, mediaId } = form;
+
+  function selectKind(nextKind: StimulusDraftKind) {
+    const nextMediaId = nextKind === kind ? mediaId : "";
+    onDraftChange(group.id, {
+      kind: nextKind,
+      html,
+      mediaId: nextMediaId,
+    });
+  }
+
+  function clearDraft() {
+    onDraftChange(group.id, null);
+  }
+
   async function add() {
-    await mutate(
+    const response = await mutate(
       `/admin/tests/groups/${group.id}/stimuli`,
       {
         method: "POST",
@@ -700,8 +1191,7 @@ function StimulusEditor({
       },
       "Đã thêm stimulus",
     );
-    setHtml("");
-    setMediaId("");
+    if (response) clearDraft();
   }
   async function remove(id: string) {
     if (confirm("Xóa passage/media này?"))
@@ -772,40 +1262,66 @@ function StimulusEditor({
       </div>
       {editable && (
         <div className="mt-4 rounded-2xl bg-surface-raised p-3">
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+            <div className="flex flex-wrap gap-2">
+              {(
+                [
+                  ["HTML", "+ Passage"],
+                  ["IMAGE", "+ Ảnh"],
+                  ["AUDIO", "+ Audio"],
+                ] as Array<[StimulusDraftKind, string]>
+              ).map(([value, label]) => (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => selectKind(value)}
+                  className={`rounded-lg border px-3 py-2 text-xs font-bold transition ${kind === value ? "border-accent bg-accent text-white dark:text-slate-950" : "border-border bg-background text-muted hover:border-accent/50 hover:text-accent"}`}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
+            <div className="flex items-center gap-3 text-[11px]">
+              <span
+                className={`font-semibold ${isPendingStimulusDraft(form) ? "text-amber-600" : "text-emerald-600"}`}
+              >
+                {isPendingStimulusDraft(form)
+                  ? "CHƯA LƯU · đã giữ bản nháp trên máy"
+                  : "Tự lưu bản nháp trên máy"}
+              </span>
+              {(html || mediaId) && (
+                <button
+                  type="button"
+                  onClick={clearDraft}
+                  className="font-bold text-danger"
+                >
+                  Xóa nháp
+                </button>
+              )}
+            </div>
+          </div>
           <div className="flex gap-2">
-            <select
-              value={kind}
-              onChange={(e) => {
-                setKind(e.target.value as typeof kind);
-                setMediaId("");
-              }}
-              className="rounded-lg border border-border bg-background px-3 py-2 text-xs"
-            >
-              <option>HTML</option>
-              <option>IMAGE</option>
-              <option>AUDIO</option>
-            </select>
             {kind === "HTML" ? (
               <textarea
                 value={html}
-                onChange={(e) => setHtml(e.target.value)}
+                onChange={(event) => {
+                  const value = event.target.value;
+                  onDraftChange(group.id, { ...form, html: value });
+                }}
                 placeholder="<article>Passage HTML…</article>"
                 className="min-h-20 flex-1 rounded-lg border border-border bg-background px-3 py-2 font-mono text-xs"
               />
             ) : (
               <select
                 value={mediaId}
-                onChange={(e) => setMediaId(e.target.value)}
+                onChange={(event) => {
+                  const value = event.target.value;
+                  onDraftChange(group.id, { ...form, mediaId: value });
+                }}
                 className="min-w-0 flex-1 rounded-lg border border-border bg-background px-3 py-2 text-xs"
               >
                 <option value="">Chọn {kind.toLowerCase()}…</option>
-                {media
-                  .filter((m) => m.type === kind)
-                  .map((m) => (
-                    <option key={m.id} value={m.id}>
-                      {m.originalName}
-                    </option>
-                  ))}
+                <MediaOptionGroups media={media} type={kind} />
               </select>
             )}
           </div>
@@ -818,7 +1334,7 @@ function StimulusEditor({
             onClick={() => void add()}
             className="mt-2 rounded-lg bg-accent px-3 py-2 text-xs font-bold text-white disabled:opacity-40 dark:text-slate-950"
           >
-            + Thêm stimulus
+            + Thêm {kind === "HTML" ? "passage" : kind.toLowerCase()}
           </button>
         </div>
       )}
@@ -835,6 +1351,10 @@ function QuestionForm({
   busy,
   mutate,
   onSelect,
+  draft,
+  onDraftChange,
+  onDiscardDraft,
+  onSaveDrafts,
 }: {
   question: Question;
   group: QuestionGroup;
@@ -844,45 +1364,17 @@ function QuestionForm({
   busy: boolean;
   mutate: ContentProps["mutate"];
   onSelect: (id: string) => void;
+  draft: QuestionDraft | undefined;
+  onDraftChange: (id: string, draft: QuestionDraft) => void;
+  onDiscardDraft: (id: string) => void;
+  onSaveDrafts: (ids?: string[]) => Promise<void>;
 }) {
-  const [number, setNumber] = useState(question.number);
-  const [prompt, setPrompt] = useState(question.promptHtml);
-  const [explanation, setExplanation] = useState(
-    question.explanationHtml ?? "",
-  );
-  const [topic, setTopic] = useState(question.grammarTopic ?? "");
-  const [tags, setTags] = useState(question.vocabularyTags.join(", "));
-  const [difficulty, setDifficulty] = useState(question.difficulty ?? "");
-  const [options, setOptions] = useState(
-    question.options.map((o) => ({
-      label: o.label,
-      contentHtml: o.contentHtml,
-      isCorrect: o.isCorrect,
-      order: o.order,
-    })),
-  );
-  async function save() {
-    const response = await mutate(
-      `/admin/tests/questions/${question.id}`,
-      {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          number,
-          promptHtml: prompt,
-          explanationHtml: explanation || null,
-          grammarTopic: topic || null,
-          vocabularyTags: tags
-            .split(",")
-            .map((v) => v.trim())
-            .filter(Boolean),
-          difficulty: difficulty || null,
-          options,
-        }),
-      },
-      "Đã lưu câu hỏi",
-    );
-    return response;
+  const form = draft ?? questionToDraft(question);
+  const { number, explanation, topic, tags, difficulty, options } = form;
+  const prompt = form.promptHtml;
+
+  function change(patch: Partial<QuestionDraft>) {
+    onDraftChange(question.id, { ...form, ...patch });
   }
   async function duplicate() {
     const response = await mutate(
@@ -897,9 +1389,10 @@ function QuestionForm({
   }
   async function remove() {
     if (confirm(`Xóa câu ${question.number}?`)) {
-      await mutate(`/admin/tests/questions/${question.id}`, {
+      const response = await mutate(`/admin/tests/questions/${question.id}`, {
         method: "DELETE",
       });
+      if (response) onDiscardDraft(question.id);
     }
   }
   async function move(targetGroupId: string) {
@@ -921,7 +1414,14 @@ function QuestionForm({
           <p className="text-xs font-bold uppercase tracking-widest text-accent">
             Question editor
           </p>
-          <h2 className="mt-1 text-xl font-bold">Câu {question.number}</h2>
+          <div className="mt-1 flex items-center gap-2">
+            <h2 className="text-xl font-bold">Câu {question.number}</h2>
+            {draft && (
+              <span className="rounded-full bg-amber-100 px-2 py-1 text-[9px] font-black text-amber-700">
+                CHƯA LƯU
+              </span>
+            )}
+          </div>
         </div>
         {editable && (
           <div className="flex gap-2 text-xs">
@@ -945,7 +1445,7 @@ function QuestionForm({
           type="number"
           value={number}
           disabled={!editable}
-          onChange={(e) => setNumber(Number(e.target.value))}
+          onChange={(event) => change({ number: Number(event.target.value) })}
           className="rounded-xl border border-border bg-background px-3 py-2"
         />
         <select
@@ -966,7 +1466,7 @@ function QuestionForm({
         <textarea
           value={prompt}
           disabled={!editable}
-          onChange={(e) => setPrompt(e.target.value)}
+          onChange={(event) => change({ promptHtml: event.target.value })}
           rows={4}
           className="mt-1 w-full rounded-xl border border-border bg-background px-3 py-2 font-mono text-xs leading-5"
         />
@@ -982,34 +1482,39 @@ function QuestionForm({
               checked={option.isCorrect}
               disabled={!editable}
               onChange={() =>
-                setOptions((items) =>
-                  items.map((item, i) => ({ ...item, isCorrect: i === index })),
-                )
+                change({
+                  options: options.map((item, optionIndex) => ({
+                    ...item,
+                    isCorrect: optionIndex === index,
+                  })),
+                })
               }
             />
             <input
               value={option.label}
               disabled={!editable}
-              onChange={(e) =>
-                setOptions((items) =>
-                  items.map((item, i) =>
-                    i === index ? { ...item, label: e.target.value } : item,
+              onChange={(event) =>
+                change({
+                  options: options.map((item, optionIndex) =>
+                    optionIndex === index
+                      ? { ...item, label: event.target.value }
+                      : item,
                   ),
-                )
+                })
               }
               className="rounded-lg border border-border bg-background px-2 py-2 text-center text-xs font-bold"
             />
             <input
               value={option.contentHtml}
               disabled={!editable}
-              onChange={(e) =>
-                setOptions((items) =>
-                  items.map((item, i) =>
-                    i === index
-                      ? { ...item, contentHtml: e.target.value }
+              onChange={(event) =>
+                change({
+                  options: options.map((item, optionIndex) =>
+                    optionIndex === index
+                      ? { ...item, contentHtml: event.target.value }
                       : item,
                   ),
-                )
+                })
               }
               className="rounded-lg border border-border bg-background px-3 py-2 text-xs"
             />
@@ -1021,7 +1526,7 @@ function QuestionForm({
         <textarea
           value={explanation}
           disabled={!editable}
-          onChange={(e) => setExplanation(e.target.value)}
+          onChange={(event) => change({ explanation: event.target.value })}
           rows={3}
           className="mt-1 w-full rounded-xl border border-border bg-background px-3 py-2 font-mono text-xs"
         />
@@ -1030,14 +1535,18 @@ function QuestionForm({
         <input
           value={topic}
           disabled={!editable}
-          onChange={(e) => setTopic(e.target.value)}
+          onChange={(event) => change({ topic: event.target.value })}
           placeholder="Grammar topic"
           className="rounded-xl border border-border bg-background px-3 py-2 text-xs"
         />
         <select
           value={difficulty}
           disabled={!editable}
-          onChange={(e) => setDifficulty(e.target.value)}
+          onChange={(event) =>
+            change({
+              difficulty: event.target.value as QuestionDraft["difficulty"],
+            })
+          }
           className="rounded-xl border border-border bg-background px-3 py-2 text-xs"
         >
           <option value="">Difficulty —</option>
@@ -1049,17 +1558,19 @@ function QuestionForm({
       <input
         value={tags}
         disabled={!editable}
-        onChange={(e) => setTags(e.target.value)}
+        onChange={(event) => change({ tags: event.target.value })}
         placeholder="vocabulary, tags"
         className="mt-2 w-full rounded-xl border border-border bg-background px-3 py-2 text-xs"
       />
       {editable && (
         <button
-          disabled={busy || !prompt || options.some((o) => !o.contentHtml)}
-          onClick={() => void save()}
+          disabled={
+            busy || !draft || !prompt || options.some((o) => !o.contentHtml)
+          }
+          onClick={() => void onSaveDrafts([question.id])}
           className="mt-4 w-full rounded-xl bg-accent px-4 py-3 font-bold text-white disabled:opacity-40 dark:text-slate-950"
         >
-          Lưu câu hỏi
+          {draft ? "Lưu riêng câu này" : "Câu này chưa có thay đổi"}
         </button>
       )}
       <AudioSegments
@@ -1127,13 +1638,7 @@ function AudioSegments({
               }
               className="col-span-2 rounded-lg border border-border bg-background p-2 text-xs"
             >
-              {media
-                .filter((m) => m.type === "AUDIO")
-                .map((m) => (
-                  <option key={m.id} value={m.id}>
-                    {m.originalName}
-                  </option>
-                ))}
+              <MediaOptionGroups media={media} type="AUDIO" />
             </select>
             <input
               type="number"
@@ -2117,14 +2622,14 @@ function ValidationPanel({
           Answer key và review được lưu riêng.
         </p>
         <button
-          disabled={busy || !validation?.valid || test.status !== "DRAFT"}
+          disabled={busy || !validation?.valid || test.status === "ARCHIVED"}
           onClick={() => void publish()}
           className="mt-5 w-full rounded-xl bg-accent px-4 py-3 font-bold text-white disabled:opacity-40 dark:text-slate-950"
         >
-          {test.status === "PUBLISHED"
-            ? "Đã publish"
-            : busy
-              ? "Đang upload R2…"
+          {busy
+            ? "Đang upload R2…"
+            : test.status === "PUBLISHED"
+              ? "Publish version mới"
               : "Publish version"}
         </button>
         {test.versions.length > 0 && (
